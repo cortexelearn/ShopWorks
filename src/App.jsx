@@ -295,6 +295,8 @@ const soSummary = (so, jobs) => {
 };
 
 /* ---------- QR: generation + camera decode (bundled npm libs) ---------- */
+const ensureJsQR = async () => {};
+const jsQRRef = (d, w, h) => jsQR(d, w, h, { inversionAttempts: "dontInvert" });
 function QRCodeSVG({ value, size = 148 }) {
   const [mods, setMods] = useState(null); // { n, grid }
   const [err, setErr] = useState(false);
@@ -453,59 +455,66 @@ function seed(n, part) {
   });
 }
 
-/* ---------------------- KIT CARD (issued kit, QR referenced) ---------------------- */
-function KitCardModal({ kit, onClose }) {
-  const payload = `SW:KIT:${kit.id}`;
+/* ---------------------- KIT CARDS (one per subassembly, individual QR) ---------------------- */
+function KitCardModal({ kit, part = null, onClose }) {
+  const cardParts = part ? kit.parts.filter(pt => pt === part) : kit.parts;
   const partial = kit.id.includes("-");
   const issued = kit.status === "issued";
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(16,26,40,.58)",
                                     display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={e => e.stopPropagation()}
-           style={{ width: "min(480px, 96vw)", maxHeight: "90vh", overflowY: "auto", background: "#FFFFFF",
-                    borderRadius: 10, boxShadow: "0 24px 70px rgba(0,0,0,.45)" }}>
-        <div style={{ background: C.navy, color: "#fff", padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <span style={{ fontWeight: 800, fontSize: 13.5, letterSpacing: 0.5 }}>KIT CARD · {issued ? "ISSUED KIT" : "KIT TICKET"}</span>
-          <span style={{ fontSize: 11, opacity: 0.85 }}>shop<span style={{ color: C.gold, fontWeight: 800 }}>WORKS</span></span>
+           style={{ width: "min(500px, 96vw)", maxHeight: "90vh", overflowY: "auto", background: "#EEF0F3",
+                    borderRadius: 12, boxShadow: "0 24px 70px rgba(0,0,0,.45)", padding: 10 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "4px 8px 10px 8px" }}>
+          <span style={{ fontWeight: 800, fontSize: 14, color: C.navy }}>
+            KIT CARD{cardParts.length > 1 ? "S" : ""} — SO {kit.id}
+          </span>
+          <span style={{ fontSize: 11, color: C.dim }}>
+            {cardParts.length} of {kit.parts.length} · one card per subassembly — each travels with its hardware
+          </span>
+          <button onClick={onClose} style={{ marginLeft: "auto", background: "none", border: "none", color: C.dim, cursor: "pointer", fontSize: 17 }}>✕</button>
         </div>
-        <div style={{ display: "flex", gap: 14, padding: "14px 16px", flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 190 }}>
-            <div style={{ fontFamily: MONO, fontWeight: 800, fontSize: 22, color: C.navy }}>
-              SO {partial ? <>{kit.so}<span style={{ color: C.amber }}>{kit.id.slice(kit.so.length)}</span></> : kit.id}
-            </div>
-            {partial && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#8A6A16", background: "#FBF3E2",
-                                       border: "1px solid #DDD3B8", borderRadius: 5, padding: "2px 8px" }}>PARTIAL KIT</span>}
-            <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 6 }}>{kit.config}</div>
-            <div style={{ marginTop: 8 }}>
-              <div style={{ fontSize: 9.5, letterSpacing: 1, fontWeight: 800, color: "#8A93A0", marginBottom: 3 }}>ASSEMBLIES IN THIS KIT</div>
-              {kit.parts.map(pt => (
-                <div key={pt} style={{ fontSize: 11.5, padding: "1.5px 0" }}>
-                  <span style={{ fontFamily: MONO, fontWeight: 800, color: PARTS[pt].color }}>{pt}</span>
-                  <span style={{ color: "#3C424A" }}> — {PARTS[pt].desc}</span>
+
+        {cardParts.map((pt, idx) => {
+          const payload = `SW:KIT:${kit.id}:${pt}`;
+          return (
+            <div key={pt} style={{ background: "#FFFFFF", borderRadius: 10, overflow: "hidden",
+                                   boxShadow: "0 3px 14px rgba(31,58,95,.15)", marginBottom: 10 }}>
+              <div style={{ background: C.navy, color: "#fff", padding: "8px 14px", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <span style={{ fontWeight: 800, fontSize: 12.5 }}>KIT CARD · {issued ? "ISSUED" : "TICKET"} · CARD {kit.parts.indexOf(pt) + 1} OF {kit.parts.length}</span>
+                <span style={{ fontSize: 10.5, opacity: 0.85 }}>shop<span style={{ color: C.gold, fontWeight: 800 }}>WORKS</span></span>
+              </div>
+              <div style={{ display: "flex", gap: 12, padding: "12px 14px", flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 175 }}>
+                  <div style={{ fontFamily: MONO, fontWeight: 800, fontSize: 19, color: C.navy }}>
+                    SO {partial ? <>{kit.so}<span style={{ color: C.amber }}>{kit.id.slice(kit.so.length)}</span></> : kit.id}
+                  </div>
+                  <div style={{ fontFamily: MONO, fontWeight: 800, fontSize: 16, color: PARTS[pt].color, marginTop: 3 }}>{pt}</div>
+                  <div style={{ fontSize: 12, color: "#3C424A" }}>{PARTS[pt].desc}</div>
+                  <div style={{ fontSize: 10.5, color: "#8A93A0", marginTop: 2 }}>{(ITEMS[pt] || []).length} BOM lines · for {kit.config}</div>
+                  <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "auto 1fr", rowGap: 3, columnGap: 10, fontSize: 11.5 }}>
+                    {[["QTY", issued ? `${kit.issuedQty} issued of ${kit.qty}` : `${kit.qty} planned`],
+                      ["DUE", kit.due],
+                      ...(issued ? [["KITTER", `${kit.kitter} · ${kit.ts}`]] : []),
+                      ...(partial ? [["LOT", `Partial kit ${kit.id.slice(kit.so.length)}`]] : [])].map(([k, v]) => (
+                      [<span key={k + "k"} style={{ color: "#8A93A0", fontWeight: 800, fontSize: 9.5, letterSpacing: 1 }}>{k}</span>,
+                       <span key={k + "v"} style={{ fontFamily: MONO, fontWeight: 700 }}>{v}</span>]
+                    ))}
+                  </div>
+                  {kit.note && <div style={{ fontSize: 10.5, color: "#59636F", fontStyle: "italic", marginTop: 5 }}>Note: {kit.note}</div>}
                 </div>
-              ))}
+                <div style={{ textAlign: "center" }}>
+                  <QRCodeSVG value={payload} size={128} />
+                  <div style={{ fontFamily: MONO, fontSize: 8.5, color: "#59636F", marginTop: 3 }}>{payload}</div>
+                </div>
+              </div>
             </div>
-            <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "auto 1fr", rowGap: 4, columnGap: 10, fontSize: 12 }}>
-              {[["QTY", issued ? `${kit.issuedQty} issued of ${kit.qty}` : `${kit.qty} planned`],
-                ["DUE", kit.due], ["WEEK", `WK ${kit.week + 1} · ${wkLabel(kit.week)}`],
-                ...(issued ? [["KITTER", kit.kitter], ["ISSUED", kit.ts]] : [])].map(([k, v]) => (
-                [<span key={k + "k"} style={{ color: "#8A93A0", fontWeight: 800, fontSize: 10, letterSpacing: 1 }}>{k}</span>,
-                 <span key={k + "v"} style={{ fontFamily: MONO, fontWeight: 700 }}>{v}</span>]
-              ))}
-            </div>
-            {kit.note && <div style={{ fontSize: 11, color: "#59636F", fontStyle: "italic", marginTop: 6 }}>Note: {kit.note}</div>}
-          </div>
-          <div style={{ textAlign: "center" }}>
-            <QRCodeSVG value={payload} size={150} />
-            <div style={{ fontFamily: MONO, fontSize: 10, color: "#59636F", marginTop: 4 }}>{payload}</div>
-          </div>
-        </div>
-        <div style={{ padding: "0 16px 12px 16px", fontSize: 11, color: "#59636F", lineHeight: 1.5 }}>
-          Travels with the kitted hardware. Scan at any station tablet to reference this kit — SO, contents,
-          issued quantity, and kitter sign-off.
-        </div>
-        <div style={{ display: "flex", gap: 8, padding: "0 16px 14px 16px" }}>
-          <button onClick={() => window.print()} style={{ ...btnGhost, flex: 1 }}>🖨 Print</button>
+          );
+        })}
+
+        <div style={{ display: "flex", gap: 8, padding: "2px 8px 6px 8px" }}>
+          <button onClick={() => window.print()} style={{ ...btnGhost, flex: 1, background: "#fff" }}>🖨 Print card{cardParts.length > 1 ? "s" : ""}</button>
           <button onClick={onClose} style={{ ...btnPrimary, flex: 1, background: C.navy }}>Close</button>
         </div>
       </div>
@@ -521,6 +530,7 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [ncrSeq, setNcrSeq] = useState(232);
   const [plan, setPlan] = useState({ orders: [], hopper: [], docs: {}, kits: [] });
+  const [session, setSession] = useState(null); // signed-in station operator
 
   const stats = useMemo(() => {
     const active = jobs.filter(j => j.status !== "complete");
@@ -598,7 +608,8 @@ export default function App() {
       {view.name === "so" && (
         <SOTreeView so={view.so} jobs={jobs} back={() => setView({ name: "sos" })} openTraveler={openTraveler} />
       )}
-      {view.name === "scan" && <ScanView jobs={jobs} kits={plan.kits} openStation={(id) => openStation(id, "scan")} />}
+      {view.name === "scan" && <ScanView jobs={jobs} kits={plan.kits} session={session} setSession={setSession}
+                                          openStation={(id) => openStation(id, "scan")} />}
       {view.name === "traveler" && (
         <TravelerView job={curJob} back={() => setView({ name: "map" })}
                       openStation={() => openStation(view.jobId, "traveler")}
@@ -606,7 +617,7 @@ export default function App() {
                       releaseHold={releaseHold} />
       )}
       {view.name === "station" && (
-        <StationView job={curJob} from={view.from}
+        <StationView job={curJob} from={view.from} session={session}
                      back={() => navAfterStation(view.from, view.jobId)}
                      signOff={signOff} raiseNCR={raiseNCR} requestSupport={requestSupport} />
       )}
@@ -692,6 +703,7 @@ const Badge = ({ n, title, right }) => (
 
 /* ---------------------- FLOOR MAP ---------------------- */
 function MapView({ jobs, jobZone, selZone, setSelZone, openTraveler, openSO }) {
+  const [fit, setFit] = useState(true); // auto fit-to-screen; toggle off for full-width (wall displays)
   const byZone = {};
   jobs.forEach(j => { if (j.status !== "complete") (byZone[jobZone(j)] ||= []).push(j); });
 
@@ -706,12 +718,26 @@ function MapView({ jobs, jobZone, selZone, setSelZone, openTraveler, openSO }) {
   return (
     <div style={{ maxWidth: 1500, margin: "0 auto", padding: "0 18px 46px 18px" }}>
       <Badge n={1} title="SHOP FLOOR — LIVE WIP"
-        right={<span style={{ fontSize: 11.5, color: C.dim }}>Tap a room for its queue · tap a job chip to open its traveler</span>} />
+        right={
+          <span style={{ display: "inline-flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 11.5, color: C.dim }}>Tap a room for its queue · tap a job chip to open its traveler</span>
+            <button onClick={() => setFit(f => !f)}
+              style={{ padding: "6px 12px", fontSize: 11.5, fontWeight: 800, cursor: "pointer", borderRadius: 7,
+                       border: `1.5px solid ${C.navy}`, background: fit ? C.navy : "#fff",
+                       color: fit ? "#fff" : C.navy, whiteSpace: "nowrap" }}>
+              {fit ? "⛶ Fit to screen" : "↔ Fit to width"}
+            </button>
+          </span>
+        } />
 
       {/* map */}
       <div style={{ position: "relative", background: C.panel, border: `1px solid ${C.line}`, borderRadius: 10, padding: 10,
                     boxShadow: "0 2px 12px rgba(31,58,95,.08)" }}>
-        <svg viewBox="50 12 1465 1013" style={{ width: "100%", height: "auto", display: "block" }}>
+        <svg viewBox="50 12 1465 1013" preserveAspectRatio="xMidYMid meet"
+             style={fit
+               ? { maxWidth: "100%", maxHeight: "calc(100vh - 320px)", width: "auto", height: "auto",
+                   display: "block", margin: "0 auto" }
+               : { width: "100%", height: "auto", display: "block" }}>
           {/* site ground */}
           <rect x={50} y={12} width={1465} height={1013} fill="#E9EAEC" />
           {/* parking lot */}
@@ -1072,12 +1098,68 @@ function TravelerView({ job, back, openStation, openSO, releaseHold }) {
   );
 }
 
-/* ---------------------- STATION TABLET: SCAN ---------------------- */
-function ScanView({ jobs, kits, openStation }) {
+/* ---------------------- STATION TABLET: SIGN-IN + SCAN ---------------------- */
+const CREW = { "1001": "R. Maldonado", "1002": "T. Kowalski", "1003": "D. Liu", "1004": "J. Santos",
+               "1005": "A. Price", "1006": "K. Osei", "1007": "S. Whitfield (QA)", "1008": "L. Braun" };
+
+function OperatorSignIn({ onSignIn }) {
+  const [eid, setEid] = useState("");
+  const [pin, setPin] = useState("");
+  const ok = eid.trim().length >= 3 && /^\d{4,6}$/.test(pin);
+  const go = () => { if (ok) onSignIn({ id: eid.trim(), name: CREW[eid.trim()] || `Operator ${eid.trim()}` }); };
+  return (
+    <div style={{ maxWidth: 560, margin: "0 auto", padding: "16px 14px 60px 14px" }}>
+      <div style={{ background: "#0E1622", borderRadius: 16, overflow: "hidden", border: "1px solid #1E2A3A",
+                    boxShadow: "0 8px 36px rgba(10,20,35,.45)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 18px",
+                      borderBottom: "1px solid #1E2A3A" }}>
+          <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: 1.5, color: "#7C8DA3" }}>ROTOR DEPARTMENT · STATION 3</span>
+          <span style={{ fontSize: 12, color: "#8FA2B8" }}>shop<span style={{ color: C.gold, fontWeight: 800 }}>WORKS</span></span>
+        </div>
+        <div style={{ padding: "26px 22px 24px 22px" }}>
+          <div style={{ textAlign: "center", marginBottom: 18 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "#FFFFFF", letterSpacing: 0.4 }}>Operator Sign-In</div>
+            <div style={{ fontSize: 11.5, color: "#8FA2B8", marginTop: 3 }}>Sign in to run travelers at this station. All sign-offs are recorded under your ID.</div>
+          </div>
+          <div style={{ maxWidth: 330, margin: "0 auto" }}>
+            <div style={{ fontSize: 10, letterSpacing: 1.2, fontWeight: 800, color: "#7C8DA3", marginBottom: 5 }}>EMPLOYEE ID</div>
+            <input value={eid} onChange={e => setEid(e.target.value.replace(/[^0-9A-Za-z]/g, ""))}
+                   onKeyDown={e => e.key === "Enter" && go()} inputMode="numeric" autoComplete="off"
+                   placeholder="e.g. 1002"
+                   style={{ width: "100%", boxSizing: "border-box", padding: "13px 14px", borderRadius: 9,
+                            border: "1.5px solid #2E4258", background: "#0A1220", color: "#E8EEF5",
+                            fontFamily: MONO, fontSize: 17, fontWeight: 700, letterSpacing: 2, marginBottom: 14 }} />
+            <div style={{ fontSize: 10, letterSpacing: 1.2, fontWeight: 800, color: "#7C8DA3", marginBottom: 5 }}>PIN</div>
+            <input value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                   onKeyDown={e => e.key === "Enter" && go()} type="password" inputMode="numeric" autoComplete="off"
+                   placeholder="••••"
+                   style={{ width: "100%", boxSizing: "border-box", padding: "13px 14px", borderRadius: 9,
+                            border: "1.5px solid #2E4258", background: "#0A1220", color: "#E8EEF5",
+                            fontFamily: MONO, fontSize: 17, fontWeight: 700, letterSpacing: 6, marginBottom: 18 }} />
+            <button disabled={!ok} onClick={go}
+              style={{ width: "100%", padding: "14px 0", borderRadius: 10, border: "none", fontSize: 14.5, fontWeight: 800,
+                       letterSpacing: 0.5, cursor: ok ? "pointer" : "not-allowed",
+                       background: ok ? "#2C6DB4" : "#1B2736", color: ok ? "#FFFFFF" : "#5E718A" }}>
+              SIGN IN
+            </button>
+            <div style={{ fontSize: 10, color: "#5E718A", textAlign: "center", marginTop: 12 }}>
+              Badge scan supported on deployed tablets · Demo directory: 1001–1008, any 4–6 digit PIN
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScanView({ jobs, kits, session, setSession, openStation }) {
   const [showList, setShowList] = useState(false);
   const [cam, setCam] = useState("idle"); // idle | starting | live | denied | unsupported | error
   const [scanMsg, setScanMsg] = useState(null);
   const [foundKit, setFoundKit] = useState(null);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manual, setManual] = useState("");
+  const [manualErr, setManualErr] = useState(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -1099,13 +1181,13 @@ function ScanView({ jobs, kits, openStation }) {
 
   const tick = () => {
     const v = videoRef.current, c = canvasRef.current;
-    if (v && c && v.readyState >= 2 && window.jsQR && v.videoWidth) {
+    if (v && c && v.readyState >= 2 && v.videoWidth) {
       const w = Math.min(v.videoWidth, 640);
       const h = Math.round((v.videoHeight / v.videoWidth) * w);
       c.width = w; c.height = h;
       const ctx = c.getContext("2d", { willReadFrequently: true });
       ctx.drawImage(v, 0, 0, w, h);
-      const code = window.jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: "dontInvert" });
+      const code = jsQRSafe(ctx.getImageData(0, 0, w, h).data, w, h);
       if (code && code.data) {
         const raw = code.data.trim();
         const m = raw.match(/^(?:SW:|IMES:)?(J-\d{3,5})$/i);
@@ -1115,16 +1197,17 @@ function ScanView({ jobs, kits, openStation }) {
           openStation(j.id);
           return;
         }
-        const km = raw.match(/^SW:KIT:(.+)$/i);
+        const km = raw.match(/^SW:KIT:([^:]+)(?::(.+))?$/i);
         if (km) {
           const kt = (kits || []).find(x => x.id.toUpperCase() === km[1].toUpperCase());
-          if (kt) {
+          const pt = km[2] ? km[2].toUpperCase() : null;
+          if (kt && (!pt || kt.parts.includes(pt))) {
             if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
-            setCam("idle"); setFoundKit(kt);
+            setCam("idle"); setFoundKit({ kit: kt, part: pt });
             return;
           }
-          setScanMsg(`Unknown kit: ${km[1]}`);
+          setScanMsg(`Unknown kit: ${km[1]}${km[2] ? ":" + km[2] : ""}`);
         } else {
           setScanMsg(j ? `${j.id} is complete — nothing to run` : `Unrecognized code: "${raw.slice(0, 28)}"`);
         }
@@ -1132,11 +1215,12 @@ function ScanView({ jobs, kits, openStation }) {
     }
     rafRef.current = requestAnimationFrame(tick);
   };
+  const jsQRSafe = (d, w, h) => (typeof jsQRRef === "function" ? jsQRRef(d, w, h) : null);
 
   const startCamera = async () => {
-    setCam("starting"); setScanMsg(null);
+    setCam("starting"); setScanMsg(null); setManualOpen(false);
     try {
-      await loadScript(JSQR_SRC);
+      await ensureJsQR();
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setCam("unsupported"); return; }
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
       streamRef.current = stream;
@@ -1150,33 +1234,66 @@ function ScanView({ jobs, kits, openStation }) {
     }
   };
 
-  const bracket = (pos) => ({ position: "absolute", width: 30, height: 30, borderColor: "#FFFFFF",
-    borderStyle: "solid", borderWidth: 0, ...pos });
+  const manualGo = () => {
+    setManualErr(null);
+    const v = manual.trim().toUpperCase().replace(/^SW:/, "");
+    let m = v.match(/^J-?(\d{3,5})$/);
+    if (m) {
+      const id = "J-" + m[1];
+      const j = jobs.find(x => x.id.toUpperCase() === id);
+      if (j && j.status !== "complete") { openStation(j.id); return; }
+      setManualErr(j ? `${id} is complete` : `${id} not found`); return;
+    }
+    m = v.replace(/^KIT:/, "").match(/^(\d{4}(?:-\d{2})?)(?::([A-Z0-9-]+))?$/);
+    if (m) {
+      const kt = (kits || []).find(x => x.id.toUpperCase() === m[1]);
+      if (kt) { setFoundKit({ kit: kt, part: m[2] && kt.parts.includes(m[2]) ? m[2] : null }); setManual(""); return; }
+      setManualErr(`Kit ${m[1]} not found`); return;
+    }
+    setManualErr("Enter a traveler (J-4521) or kit (4113-01)");
+  };
 
+  if (!session) return <OperatorSignIn onSignIn={setSession} />;
+
+  const live = cam === "live" || cam === "starting";
   return (
     <div style={{ maxWidth: 560, margin: "0 auto", padding: "16px 14px 60px 14px" }}>
-      {/* tablet camera frame */}
-      <div style={{ background: "#0B1119", borderRadius: 18, overflow: "hidden", boxShadow: "0 8px 36px rgba(10,20,35,.45)", border: "1px solid #1E2A3A" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 16px 0 16px", color: "#7C8DA3", fontSize: 11, fontFamily: MONO }}>
-          <span>ᯤ ▮▮▮▯</span>
-          <span>ROTOR DEPARTMENT — STATION 3</span>
+      <div style={{ background: "#0E1622", borderRadius: 16, overflow: "hidden", border: "1px solid #1E2A3A",
+                    boxShadow: "0 8px 36px rgba(10,20,35,.45)" }}>
+        {/* station / operator bar */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 16px",
+                      borderBottom: "1px solid #1E2A3A" }}>
+          <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: 1.5, color: "#7C8DA3" }}>ROTOR DEPT · STATION 3</span>
+          <span style={{ flex: 1 }} />
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "#E8EEF5", fontWeight: 700 }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#3FCF8E" }} />
+            {session.name}
+          </span>
+          <button onClick={() => { stopCamera(); setSession(null); }}
+            style={{ background: "none", border: "1px solid #2E4258", color: "#8FA2B8", fontSize: 10.5,
+                     fontWeight: 700, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>
+            Sign out
+          </button>
         </div>
-        <div style={{ textAlign: "center", color: "#fff", padding: "8px 16px 0 16px" }}>
-          <div style={{ fontWeight: 800, fontSize: 21 }}>Scan Job Traveler QR</div>
-          <div style={{ fontSize: 12, color: "#8FA2B8", marginTop: 2 }}>
-            shop<span style={{ color: C.gold, fontWeight: 800 }}>WORKS</span> · {cam === "live" ? "searching for QR…" : "point camera at the kitting card"}
+
+        <div style={{ textAlign: "center", padding: "14px 16px 4px 16px" }}>
+          <div style={{ fontSize: 17, fontWeight: 800, color: "#FFFFFF", letterSpacing: 0.3 }}>Traveler / Kit Scan</div>
+          <div style={{ fontSize: 11.5, color: "#8FA2B8", marginTop: 2 }}>
+            {live ? "Searching for QR…" : "Scan the QR on a traveler or kit card to open it at its current step"}
           </div>
         </div>
 
-        {cam === "live" || cam === "starting" ? (
+        {live ? (
           <div style={{ position: "relative", margin: "10px 12px 0 12px" }}>
             <video ref={videoRef} playsInline muted
                    style={{ width: "100%", display: "block", maxHeight: 340, objectFit: "cover",
                             background: "#000", borderRadius: 10 }} />
-            <div style={bracket({ top: 12, left: 12, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 4 })} />
-            <div style={bracket({ top: 12, right: 12, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 4 })} />
-            <div style={bracket({ bottom: 12, left: 12, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 4 })} />
-            <div style={bracket({ bottom: 12, right: 12, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 4 })} />
+            {[["top", "left"], ["top", "right"], ["bottom", "left"], ["bottom", "right"]].map(([vv, hh], i) => (
+              <div key={i} style={{ position: "absolute", [vv]: 12, [hh]: 12, width: 28, height: 28,
+                                    borderColor: "#FFFFFF", borderStyle: "solid", borderWidth: 0,
+                                    [`border${vv[0].toUpperCase() + vv.slice(1)}Width`]: 3.5,
+                                    [`border${hh[0].toUpperCase() + hh.slice(1)}Width`]: 3.5, borderRadius: 3 }} />
+            ))}
             {cam === "starting" && (
               <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
                             color: "#9FB2C8", fontSize: 13, fontWeight: 700 }}>Starting camera…</div>
@@ -1189,70 +1306,79 @@ function ScanView({ jobs, kits, openStation }) {
             )}
           </div>
         ) : (
-          <svg viewBox="0 0 320 290" style={{ width: "100%", display: "block" }}>
-            <rect x={0} y={0} width={320} height={290} fill="#0B1119" />
-            <g transform="rotate(-8 160 165)">
-              <rect x={62} y={112} width={196} height={118} rx={5} fill="#E9E6DC" />
-              <rect x={62} y={112} width={196} height={24} rx={5} fill="#1F3A5F" />
-              <text x={74} y={129} fontSize={11} fill="#fff" fontFamily={SANS} fontWeight={800}>KITTING CARD · JOB TRAVELER</text>
-              <text x={74} y={156} fontSize={10} fontFamily={MONO} fontWeight={700} fill="#33383E">SO 41__ · ___-____</text>
-              {[168, 180, 192].map(y => <rect key={y} x={74} y={y} width={100} height={5} rx={2.5} fill="#B9B4A4" />)}
-              <rect x={196} y={148} width={52} height={52} fill="#fff" />
-              {[[200,152],[232,152],[200,184]].map(([x,y],i)=>(
-                <g key={i}><rect x={x} y={y} width={16} height={16} fill="#14181D"/><rect x={x+4} y={y+4} width={8} height={8} fill="#fff"/><rect x={x+6} y={y+6} width={4} height={4} fill="#14181D"/></g>
-              ))}
-              {[[222,154],[226,162],[220,170],[230,174],[238,178],[224,182],[234,188],[240,170]].map(([x,y],i)=>(
-                <rect key={"m"+i} x={x} y={y} width={4} height={4} fill="#14181D" />
-              ))}
-            </g>
-            {[[30,26,1,1],[290,26,-1,1],[30,264,1,-1],[290,264,-1,-1]].map(([x,y,dx,dy],i)=>(
-              <path key={i} d={`M ${x} ${y+dy*26} L ${x} ${y} L ${x+dx*26} ${y}`} stroke="#FFFFFF" strokeWidth={4.5} fill="none" strokeLinecap="round" />
+          <svg viewBox="0 0 320 236" style={{ width: "100%", display: "block" }}>
+            <rect x={0} y={0} width={320} height={236} fill="#0E1622" />
+            <rect x={58} y={34} width={204} height={168} rx={10} fill="#0A1220" stroke="#1E2A3A" strokeWidth={1.5} />
+            {[[70, 46, 1, 1], [250, 46, -1, 1], [70, 190, 1, -1], [250, 190, -1, -1]].map(([x, y, dx, dy], i) => (
+              <path key={i} d={`M ${x} ${y + dy * 20} L ${x} ${y} L ${x + dx * 20} ${y}`}
+                    stroke="#5E7590" strokeWidth={3} fill="none" strokeLinecap="round" />
             ))}
-            <circle cx={160} cy={145} r={24} stroke="#FFFFFF" strokeWidth={2} fill="none" opacity={0.85} />
-            <path d="M160 129 v10 M160 151 v10 M144 145 h10 M166 145 h10" stroke="#FFFFFF" strokeWidth={2} opacity={0.85} />
-            <rect x={34} y={40} width={252} height={3} rx={1.5} fill="#4DA3FF" opacity={0.9}>
-              <animate attributeName="y" values="40;250;40" dur="3s" repeatCount="indefinite" />
+            <g stroke="#33475E" strokeWidth={2.5} fill="none">
+              <rect x={137} y={95} width={16} height={16} /><rect x={141} y={99} width={8} height={8} fill="#33475E" stroke="none" />
+              <rect x={167} y={95} width={16} height={16} /><rect x={171} y={99} width={8} height={8} fill="#33475E" stroke="none" />
+              <rect x={137} y={125} width={16} height={16} /><rect x={141} y={129} width={8} height={8} fill="#33475E" stroke="none" />
+              <path d="M169 127 h5 M178 127 h5 M171 134 h4 M180 133 v6 M172 140 h9" stroke="#33475E" strokeWidth={3} />
+            </g>
+            <text x={160} y={182} fontSize={10.5} fill="#5E718A" textAnchor="middle" fontFamily={SANS}>Position the QR within the frame</text>
+            <rect x={70} y={60} width={180} height={2} rx={1} fill="#2C6DB4" opacity={0.55}>
+              <animate attributeName="y" values="60;176;60" dur="3.4s" repeatCount="indefinite" />
             </rect>
           </svg>
         )}
 
         <canvas ref={canvasRef} style={{ display: "none" }} />
 
-        <div style={{ padding: "10px 14px 14px 14px", display: "flex", gap: 8 }}>
-          {cam === "live" || cam === "starting" ? (
+        <div style={{ padding: "12px 14px 6px 14px", display: "flex", gap: 8 }}>
+          {live ? (
             <button onClick={stopCamera}
-              style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "1px solid #6E3B33",
-                       background: "#3A1F1B", color: "#F0A08F", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+              style={{ flex: 1, padding: "13px 0", borderRadius: 10, border: "1px solid #6E3B33",
+                       background: "#2A1714", color: "#F0A08F", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>
               ■ Stop Camera
             </button>
           ) : (
             <>
               <button onClick={startCamera}
-                style={{ flex: 1.4, padding: "12px 0", borderRadius: 10, border: "none",
-                         background: "#2C6DB4", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+                style={{ flex: 1.4, padding: "13px 0", borderRadius: 10, border: "none",
+                         background: "#2C6DB4", color: "#fff", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>
                 ▶ Start Camera Scan
               </button>
-              <button title="Camera not wired in demo"
-                style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "1px solid #2E4258",
-                         background: "#152232", color: "#9FB2C8", fontWeight: 800, fontSize: 14, cursor: "not-allowed" }}>
+              <button onClick={() => { setManualOpen(v => !v); setManualErr(null); }}
+                style={{ flex: 1, padding: "13px 0", borderRadius: 10, border: `1px solid ${manualOpen ? "#2C6DB4" : "#2E4258"}`,
+                         background: manualOpen ? "#13253C" : "#121C2B", color: manualOpen ? "#CFE1F5" : "#9FB2C8",
+                         fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>
                 Manual Entry
               </button>
             </>
           )}
         </div>
+        {manualOpen && !live && (
+          <div style={{ padding: "2px 14px 14px 14px" }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input value={manual} onChange={e => { setManual(e.target.value); setManualErr(null); }}
+                     onKeyDown={e => e.key === "Enter" && manualGo()} autoFocus
+                     placeholder="Traveler J-4521 · Kit 4113-01"
+                     style={{ flex: 1, boxSizing: "border-box", padding: "12px 13px", borderRadius: 9,
+                              border: `1.5px solid ${manualErr ? "#C0402E" : "#2E4258"}`, background: "#0A1220",
+                              color: "#E8EEF5", fontFamily: MONO, fontSize: 14, fontWeight: 700 }} />
+              <button onClick={manualGo}
+                style={{ padding: "0 20px", borderRadius: 9, border: "none", background: "#2C6DB4",
+                         color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Open</button>
+            </div>
+            {manualErr && <div style={{ fontSize: 11, color: "#F0A08F", fontWeight: 700, marginTop: 5 }}>{manualErr}</div>}
+          </div>
+        )}
         {(cam === "denied" || cam === "unsupported" || cam === "error") && (
-          <div style={{ margin: "0 14px 14px 14px", background: "#2A2314", border: "1px solid #6E5B22",
+          <div style={{ margin: "0 14px 14px 14px", background: "#221D10", border: "1px solid #6E5B22",
                         borderRadius: 9, padding: "9px 12px", fontSize: 11.5, color: "#E8C368", lineHeight: 1.55 }}>
-            Camera unavailable here — {cam === "denied" ? "permission was blocked (embedded previews sandbox the camera)" :
+            Camera unavailable — {cam === "denied" ? "permission blocked (embedded previews sandbox the camera)" :
               cam === "unsupported" ? "this browser context doesn't expose the camera API" : "it failed to start"}.
-            Host this app over <b>HTTPS or localhost</b> (e.g. Vite on the shop network) and the live scan works on the
-            tablet. Use the demo pull below in the meantime.
+            On the deployed HTTPS site the live scan works. Use Manual Entry or the demo pull below.
           </div>
         )}
       </div>
 
       <button onClick={() => setShowList(v => !v)}
-        style={{ ...btnPrimary, width: "100%", marginTop: 12, padding: "14px 0", fontSize: 14, background: C.navy }}>
+        style={{ ...btnPrimary, width: "100%", marginTop: 12, padding: "13px 0", fontSize: 13.5, background: C.navy }}>
         ▣ Demo: Pull an Open Traveler {showList ? "▴" : "▾"}
       </button>
 
@@ -1281,11 +1407,11 @@ function ScanView({ jobs, kits, openStation }) {
       )}
       <div style={{ fontSize: 11, color: C.dim, marginTop: 12, lineHeight: 1.55 }}>
         These QR codes are real — traveler cards encode <span style={{ fontFamily: MONO }}>SW:J-####</span> and open
-        the station; issued kit cards encode <span style={{ fontFamily: MONO }}>SW:KIT:####-##</span> and open the kit
-        reference. Scan a card from another screen or printout with a camera-enabled deployment.
+        the station; issued kit cards encode <span style={{ fontFamily: MONO }}>SW:KIT:####-##:PART</span> and open the kit
+        reference. Sign-offs record under the signed-in operator.
       </div>
 
-      {foundKit && <KitCardModal kit={foundKit} onClose={() => setFoundKit(null)} />}
+      {foundKit && <KitCardModal kit={foundKit.kit} part={foundKit.part} onClose={() => setFoundKit(null)} />}
     </div>
   );
 }
@@ -1353,11 +1479,11 @@ function OpFigure({ op }) {
 }
 
 /* ---------------------- OPERATOR STATION (full screen) ---------------------- */
-function StationView({ job, from, back, signOff, raiseNCR, requestSupport }) {
+function StationView({ job, from, back, signOff, raiseNCR, requestSupport, session }) {
   const [disp, setDisp] = useState(null); // 'pass' | 'fail' | 'split'
   const [qtyA, setQtyA] = useState(job ? job.qty : 0);
   const [qtyR, setQtyR] = useState(0);
-  const [operator, setOperator] = useState("");
+  const [operator, setOperator] = useState(session ? session.name : "");
   const [inspector, setInspector] = useState("");
   const [stamped, setStamped] = useState(false);
   const [note, setNote] = useState("");
@@ -1464,10 +1590,6 @@ function StationView({ job, from, back, signOff, raiseNCR, requestSupport }) {
                 <b>TRAVELER LEARNING</b> — snap how this step is really done. Photos route to Engineering
                 for review and, once confirmed, become this operation's work-instruction figure.
               </span>
-              {photos.map((ph, i) => (
-                <img key={i} src={ph.url} alt={ph.name}
-                     style={{ width: 46, height: 46, objectFit: "cover", borderRadius: 7, border: "2px solid #9CC3A8" }} />
-              ))}
               {photos.length > 0 && (
                 <span style={{ fontSize: 9.5, fontWeight: 800, color: "#8A6A16", background: "#FBF3E2",
                                border: "1px solid #DDD3B8", borderRadius: 6, padding: "3px 8px" }}>
@@ -1475,6 +1597,22 @@ function StationView({ job, from, back, signOff, raiseNCR, requestSupport }) {
                 </span>
               )}
             </div>
+            {photos.length > 0 && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(158px, 1fr))", gap: 10, marginTop: 10 }}>
+                {photos.map((ph, i) => (
+                  <div key={i} style={{ border: "1.5px solid #C9A84C", borderRadius: 8, overflow: "hidden", background: "#FFFFFF" }}>
+                    <img src={ph.url} alt={ph.name}
+                         style={{ width: "100%", height: 128, objectFit: "cover", display: "block" }} />
+                    <div style={{ background: "#FBF3E2", borderTop: "1px dashed #C9A84C", padding: "5px 8px" }}>
+                      <div style={{ fontSize: 8.5, fontWeight: 800, color: "#8A6A16", letterSpacing: 0.4 }}>
+                        PROPOSED FIGURE {op.op}-{i + 2} — PENDING ENGINEERING REVIEW
+                      </div>
+                      <div style={{ fontSize: 8, color: "#8A93A0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ph.name}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* instructions */}
@@ -1732,6 +1870,17 @@ function PlanningView({ jobs, plan, setPlan }) {
   const [form, setForm] = useState({ part: "STA-3100", qty: 10 });
   const [selWk, setSelWk] = useState(null); // { week, dept|null }
   const [relSo, setRelSo] = useState(null);  // SO being released (modal)
+  const [docModal, setDocModal] = useState(false);
+  const [docForm, setDocForm] = useState({ so: "", part: "STA-3100", qty: 10 });
+  const [docFiles, setDocFiles] = useState([]);
+  const folderRef = useRef(null);
+  const filesPickRef = useRef(null);
+  const collectDocs = (files) => {
+    if (!files || !files.length) return;
+    const arr = Array.from(files).slice(0, 40).map(f => ({
+      name: f.name, kb: Math.max(1, Math.round(f.size / 1024)), rel: f.webkitRelativePath || "" }));
+    setDocFiles(d => [...d, ...arr].slice(0, 40));
+  };
   const fileRef = useRef(null);
   const docTarget = useRef(null);
 
@@ -1865,6 +2014,10 @@ function PlanningView({ jobs, plan, setPlan }) {
     <div style={{ maxWidth: 1500, margin: "0 auto", padding: "0 18px 60px 18px" }}>
       <input type="file" multiple ref={fileRef} style={{ display: "none" }}
              onChange={e => { attach(e.target.files); e.target.value = ""; }} />
+      <input type="file" multiple ref={filesPickRef} style={{ display: "none" }}
+             onChange={e => { collectDocs(e.target.files); e.target.value = ""; }} />
+      <input type="file" multiple webkitdirectory="" directory="" ref={folderRef} style={{ display: "none" }}
+             onChange={e => { collectDocs(e.target.files); e.target.value = ""; }} />
 
       <Badge n={1} title="JOB HOPPER — RELEASE PLANNING"
         right={
@@ -1877,6 +2030,8 @@ function PlanningView({ jobs, plan, setPlan }) {
               onChange={e => setForm(f => ({ ...f, qty: Math.max(1, Math.min(50, parseInt(e.target.value) || 1)) }))}
               style={{ width: 58, padding: "7px 8px", borderRadius: 7, border: `1.5px solid ${C.line}`, fontSize: 12.5, fontFamily: MONO }} />
             <button onClick={addOrder} style={{ ...btnGhost, padding: "7px 12px" }}>＋ Add order</button>
+            <button onClick={() => { setDocForm({ so: nextSo(), part: form.part, qty: form.qty }); setDocFiles([]); setDocModal(true); }}
+                    style={{ ...btnGhost, padding: "7px 12px" }}>📁 Order from docs</button>
             <button onClick={demoTen} style={{ ...btnPrimary, background: C.navy, padding: "8px 14px", fontSize: 12 }}>⚡ Demo: 10 × Stator this week</button>
           </span>
         } />
@@ -2072,6 +2227,86 @@ function PlanningView({ jobs, plan, setPlan }) {
           JobBOSS² standard times and actuals learned from sign-off timestamps.
         </div>
       </div>
+
+      {docModal && (() => {
+        const soTaken = !!allOrders.find(x => x.so === docForm.so.trim());
+        const soOk = docForm.so.trim().length >= 3 && !soTaken;
+        const folder = docFiles.find(f => f.rel);
+        const folderName = folder ? folder.rel.split("/")[0] : null;
+        const create = () => {
+          const so = docForm.so.trim();
+          setPlan(p => ({ ...p,
+            orders: [...p.orders, { so, part: docForm.part, config: PARTS[docForm.part].desc, qty: docForm.qty, due: wkLabel(10) }],
+            docs: { ...p.docs, [so]: [...(p.docs[so] || []), ...docFiles.map(f => ({ name: f.name, kb: f.kb }))] } }));
+          setDocModal(false);
+        };
+        return (
+          <div onClick={() => setDocModal(false)}
+               style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(16,26,40,.58)",
+                        display: "flex", alignItems: "center", justifyContent: "center", padding: 14 }}>
+            <div onClick={e => e.stopPropagation()}
+                 style={{ width: "min(520px, 96vw)", maxHeight: "88vh", overflowY: "auto",
+                          background: "#fff", borderRadius: 12, boxShadow: "0 24px 70px rgba(0,0,0,.45)" }}>
+              <div style={{ background: C.navy, color: "#fff", padding: "10px 16px", display: "flex", alignItems: "baseline" }}>
+                <span style={{ fontWeight: 800, fontSize: 14 }}>NEW ORDER FROM DOCUMENT FOLDER</span>
+                <button onClick={() => setDocModal(false)}
+                  style={{ marginLeft: "auto", background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 16 }}>✕</button>
+              </div>
+              <div style={{ padding: "12px 16px" }}>
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <button onClick={() => folderRef.current?.click()} style={{ ...btnGhost, flex: 1 }}>📁 Choose folder…</button>
+                  <button onClick={() => filesPickRef.current?.click()} style={{ ...btnGhost, flex: 1 }}>🗎 Choose files…</button>
+                </div>
+                {folderName && (
+                  <div style={{ fontSize: 11.5, fontWeight: 800, color: C.navy, marginBottom: 4 }}>
+                    📁 {folderName} <span style={{ color: C.dim, fontWeight: 600 }}>— {docFiles.length} file{docFiles.length === 1 ? "" : "s"}</span>
+                  </div>
+                )}
+                {docFiles.length > 0 && (
+                  <div style={{ maxHeight: 150, overflowY: "auto", border: `1px solid ${C.line}`, borderRadius: 8,
+                                padding: "6px 10px", marginBottom: 10, background: "#F7F8FA" }}>
+                    {docFiles.map((f, i) => (
+                      <div key={i} style={{ display: "flex", gap: 8, fontSize: 11, fontFamily: MONO, color: "#4A5462", padding: "1.5px 0" }}>
+                        <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.name}</span>
+                        <span style={{ color: C.dim }}>{f.kb} KB</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {docFiles.length === 0 && (
+                  <div style={{ fontSize: 11.5, color: C.dim, marginBottom: 10 }}>
+                    Pick the order's document folder (drawings, POs, specs) — attached to the SO and carried through kitting.
+                  </div>
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 84px", gap: 10, alignItems: "end" }}>
+                  <Field label="Sales order">
+                    <input value={docForm.so} onChange={e => setDocForm(f => ({ ...f, so: e.target.value.replace(/[^0-9A-Za-z-]/g, "") }))}
+                           style={{ ...inputStyle, borderColor: soOk ? "#C9C4B4" : C.red }} maxLength={8} />
+                  </Field>
+                  <Field label="Part / configuration">
+                    <select value={docForm.part} onChange={e => setDocForm(f => ({ ...f, part: e.target.value }))}
+                            style={{ ...inputStyle, fontFamily: MONO, fontSize: 12.5 }}>
+                      {Object.keys(PARTS).map(pn => <option key={pn} value={pn}>{pn} — {PARTS[pn].desc}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Qty">
+                    <input type="number" min={1} max={99} value={docForm.qty}
+                           onChange={e => setDocForm(f => ({ ...f, qty: Math.max(1, Math.min(99, parseInt(e.target.value) || 1)) }))}
+                           style={inputStyle} />
+                  </Field>
+                </div>
+                {soTaken && <div style={{ fontSize: 11, color: C.red, fontWeight: 700, marginTop: 4 }}>SO {docForm.so} already exists — pick another number.</div>}
+                <button disabled={!soOk} onClick={create}
+                  style={{ marginTop: 12, width: "100%", padding: "13px 0", borderRadius: 9, border: "none",
+                           fontSize: 13.5, fontWeight: 800, cursor: soOk ? "pointer" : "not-allowed",
+                           background: soOk ? C.green : "#C9CFD8", color: "#fff" }}>
+                  Create SO {docForm.so || "—"} · {docFiles.length} doc{docFiles.length === 1 ? "" : "s"} attached → backlog
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {relSo && (() => {
         const ord = allOrders.find(x => x.so === relSo);
