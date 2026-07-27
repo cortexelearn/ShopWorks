@@ -666,7 +666,7 @@ function Header({ stats, view, setView }) {
           <Tab id="plan" label="⇪ Planning" />
           <Tab id="kit" label="▦ Kitting" />
           <Tab id="sos" label="≡ Sales Orders" />
-          <Tab id="bw" label="▤ Bandwidth" />
+          <Tab id="bw" label="▤ Capacity" />
           <Tab id="map" label="⌂ Map View" />
           <Tab id="scan" label="▣ Tablet Mode" />
         </div>
@@ -2078,7 +2078,7 @@ function PlanningView({ jobs, plan, setPlan }) {
         </div>
       </div>
 
-      <Badge n={2} title="DEPARTMENT BANDWIDTH — % OF WEEKLY CAPACITY"
+      <Badge n={2} title="DEPARTMENT CAPACITY — WEEKLY LOAD %"
         right={
           <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
             <span style={{ fontSize: 11, color: C.dim, marginRight: 4 }}>Period:</span>
@@ -2220,7 +2220,7 @@ function PlanningView({ jobs, plan, setPlan }) {
           ))}
         </div>
         <div style={{ fontSize: 10.5, color: C.dim, marginTop: 8, lineHeight: 1.55 }}>
-          PREVIEW — the Bandwidth tab adds execution detail: holds, NCRs, frozen work, QA-pending, and late risk.
+          PREVIEW — the Capacity tab adds execution detail: holds, NCRs, frozen work, QA-pending, and late risk.
           Load = active floor jobs (remaining ops from their current step) + hopper orders (full routing from their planned week).
           Subassemblies are scheduled before their parents — queue stator assemblies and Stacking loads first, Winding follows.
           Demo model: estimated hours per op scaled by qty · ~{WEEK_BUDGET}h touch-time per job per week. Production version uses
@@ -2406,7 +2406,7 @@ function BandwidthView({ jobs, plan }) {
 
   return (
     <div style={{ maxWidth: 1500, margin: "0 auto", padding: "0 18px 60px 18px" }}>
-      <Badge n={1} title="DEPARTMENT BANDWIDTH — EXECUTION VIEW"
+      <Badge n={1} title="DEPARTMENT CAPACITY — EXECUTION VIEW"
         right={
           <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
             <span style={{ fontSize: 11, color: C.dim, marginRight: 4 }}>Period:</span>
