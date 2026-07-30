@@ -523,7 +523,8 @@ const EQUIP = {
 /* ---------- Seed jobs ---------- */
 const SEED_JOBS = [
   /* SO 4103 — Full Actuator (whole tree in works) */
-  { id: "J-4521", so: "4103", part: "ROT-3120", qty: 6, cur: 4, status: "active", operator: "R. Maldonado", signoffs: seed(4, "ROT-3120"), due: "Jul 31" },
+  { id: "J-4521", so: "4103", part: "ROT-3120", qty: 6, cur: 4, status: "active", operator: "R. Maldonado", signoffs: seed(4, "ROT-3120"), due: "Jul 31",
+    rwTags: [{ op: 80, mode: "loop", returnOp: 70, name: "Re-grind flagged OD zones", est: 35, id: "RW-SO" }] },
   { id: "J-4498", so: "4103", part: "LAM-3110", qty: 6, cur: 3, status: "active", operator: "D. Liu", signoffs: seed(3, "LAM-3110"), due: "Jul 29" },
   { id: "J-4502", so: "4103", part: "GH-2000",  qty: 6, cur: 4, status: "active", operator: "M. Reyes", signoffs: seed(4, "GH-2000"),  due: "Aug 03",
     rw: { id: "RW-A", mode: "task", name: "Clean, Re-lube & Checkout", returnOp: null, est: 45,
@@ -536,17 +537,27 @@ const SEED_JOBS = [
   { id: "J-4541", so: "4104", part: "LAM-3110", qty: 4, cur: 4, status: "active", operator: null, signoffs: seed(4, "LAM-3110"), due: "Jul 29" },
   /* SO 4105 — Rotor spares */
   { id: "J-4548", so: "4105", part: "ROT-3120", qty: 8, cur: 1, status: "active", operator: "S. Whitfield (QA)", signoffs: seed(1, "ROT-3120"), due: "Aug 10" },
-  /* SO 4106 — Stator Assembly (in VPI) */
-  { id: "J-4552", so: "4106", part: "STA-3100", qty: 10, cur: 4, status: "active", operator: "A. Price", signoffs: seed(4, "STA-3100"), due: "Aug 12" },
+  /* SO 4106 — Stator Assembly (in VPI) — OP 40 shows a COMPLETED std rework: 2 EA coil re-form, 1.5h captured */
+  { id: "J-4552", so: "4106", part: "STA-3100", qty: 10, cur: 4, status: "active", operator: "A. Price", due: "Aug 12",
+    signoffs: [...seed(3, "STA-3100"),
+      { op: 40, operator: "A.P.", qtyA: 8, qtyR: 2, attempt: 1, note: "2 EA end-turn clearance to frame under min — coil re-position & re-form",
+        rwTag: "Coil re-position & re-form", rwId: "RW-CF", rwMode: "task", rwHours: null, ts: "Jul 24, 09:10 AM", qaStamp: "QA-07" },
+      { op: 40, operator: "A.P.", qtyA: 2, qtyR: 0, attempt: 2, note: "Re-formed, clearances verified — balance accepted",
+        rwTag: "Coil re-position & re-form", rwId: "RW-CF", rwMode: "task", rwHours: 1.5, ts: "Jul 24, 01:45 PM", qaStamp: "QA-07" }] },
   /* SO 4107 — Gearhead spares */
   { id: "J-4526", so: "4107", part: "GH-2000",  qty: 6, cur: 1, status: "active", operator: null, signoffs: seed(1, "GH-2000"),  due: "Aug 10" },
   /* SO 4109 — Lamination stacks */
   { id: "J-4544", so: "4109", part: "LAM-3110", qty: 20, cur: 2, status: "active", operator: "L. Braun", signoffs: seed(2, "LAM-3110"), due: "Aug 08" },
-  /* SO 4113 — Brush DC motor running as one-piece flow cell (Kyzentree replacement demo) */
+  /* SO 4113 — Brush DC motor running as one-piece flow cell (Kyzentree replacement demo)
+     One prior shift already signed off (4 EA · avg takt 3:52); shift 2 mid-flight */
   { id: "J-4560", so: "4113", part: "MOT-5000", qty: 12, cur: 1, status: "active", operator: null,
-    signoffs: seed(1, "MOT-5000"), due: "Aug 19",
+    signoffs: [...seed(1, "MOT-5000"),
+      { op: 20, opEnd: 70, type: "cell", operator: "R.M.", qtyA: 4, qtyR: 0, attempt: 1,
+        note: "CELL BDC-1 shift · OP 20–70 · 4 EA through · 0 rejected/pulled · avg takt 3:52 vs target 4:00 · crew: R.M. · D.L. · J.S. · K.O.",
+        ts: "Jul 28, 03:20 PM", qaStamp: "QA-07" }],
+    due: "Aug 19",
     cell: { enabled: true, name: "CELL BDC-1", from: 1, to: 6, takt: 240, target: 8,
-            counts: [6, 5, 5, 4, 3, 3], doneTotal: 0,
+            counts: [6, 5, 5, 4, 3, 3], doneTotal: 4,
             stats: [
               { passes: 6, rejects: 0, cycN: 6, sumCycle: 6 * 225, lastTs: null },
               { passes: 5, rejects: 1, cycN: 5, sumCycle: 5 * 250, lastTs: null },
@@ -870,7 +881,7 @@ export default function App() {
                                             importInv={importInv} consumeKit={consumeKit} />}
       {view.name === "so" && (
         <SOTreeView so={view.so} jobs={jobs} back={() => setView({ name: "sos" })} openTraveler={openTraveler}
-                    setCell={setCell} setRwTags={setRwTags} />
+                    setCell={setCell} />
       )}
       {view.name === "scan" && <ScanView jobs={jobs} kits={plan.kits} session={session} setSession={setSession}
                                           openStation={(id) => openStation(id, "scan")} />}
@@ -878,7 +889,7 @@ export default function App() {
         <TravelerView job={curJob} back={() => setView({ name: "map" })}
                       openStation={() => openStation(view.jobId, "traveler")}
                       openSO={() => openSO(curJob?.so)}
-                      releaseHold={releaseHold} />
+                      releaseHold={releaseHold} setRwTags={setRwTags} />
       )}
       {view.name === "station" && (curJob?.cell?.enabled && curJob.cur >= curJob.cell.from ? (
         <CellStationView job={curJob} from={view.from} session={session}
@@ -1398,7 +1409,7 @@ const LegendSwatch = ({ color, border, label }) => (
 );
 
 /* ---------------------- TRAVELER ---------------------- */
-function TravelerView({ job, back, openStation, openSO, releaseHold }) {
+function TravelerView({ job, back, openStation, openSO, releaseHold, setRwTags }) {
   const [showCard, setShowCard] = useState(false);
   if (!job) return null;
   const p = PARTS[job.part];
@@ -1471,7 +1482,8 @@ function TravelerView({ job, back, openStation, openSO, releaseHold }) {
                 const isCur = i === job.cur && job.status !== "complete";
                 const recs = job.signoffs.filter(s => s.op === op.op);
                 const so = recs[recs.length - 1];
-                const rwHere = recs.some(r => r.attempt >= 2) || (job.rw && job.rw.op === op.op);
+                const rwHere = recs.some(r => r.attempt >= 2 && r.type !== "cell") || (job.rw && job.rw.op === op.op);
+                const inCell = job.cell?.enabled && i >= job.cell.from && i <= job.cell.to;
                 return (
                   <tr key={op.op} style={{
                     background: isCur ? "#FBEED3" : op.qa && !done ? "#FBF6E8" : done ? "#EFF3EC" : "transparent",
@@ -1484,12 +1496,27 @@ function TravelerView({ job, back, openStation, openSO, releaseHold }) {
                     <td style={{ padding: "8px 10px", fontFamily: MONO }}>{op.wc}</td>
                     <td style={{ padding: "8px 10px" }}>
                       <b>{op.title}.</b> <span style={{ color: "#5A5648" }}>{op.steps[0]}</span>
+                      {inCell && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: "#1D5C9E",
+                                                background: "#EAF1F9", border: "1px solid #C3D4E8", borderRadius: 5,
+                                                padding: "1px 6px", whiteSpace: "nowrap" }}>
+                        ⚙ {job.cell.name || "CELL"} · TAKT {fmtTakt(job.cell.takt)}
+                      </span>}
                       {isCur && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: "#8A6A16" }}>◄ CURRENT</span>}
                     </td>
                     <td style={{ padding: "8px 10px", fontFamily: MONO, whiteSpace: "nowrap", fontSize: 11 }}>
                       {recs.length > 1
-                        ? recs.map((r, k) => <div key={k}>{r.qtyA != null ? `${r.qtyA} / ${r.qtyR}` : "— / —"} <span style={{ color: "#8A6A16", fontSize: 9 }}>{r.attempt >= 2 ? "2ND PASS" : "1ST PASS"}</span></div>)
-                        : so && so.qtyA != null ? `${so.qtyA} / ${so.qtyR}` : done ? "— / —" : ""}
+                        ? recs.map((r, k) => (
+                            <div key={k}>
+                              {r.qtyA != null ? `${r.qtyA} / ${r.qtyR}` : "— / —"}{" "}
+                              <span style={{ color: r.type === "cell" ? "#1D5C9E" : "#8A6A16", fontSize: 9 }}>
+                                {r.type === "cell" ? "CELL SHIFT" : r.attempt >= 2 ? "2ND PASS" : "1ST PASS"}
+                                {r.rwHours ? ` · ${r.rwHours}h RW` : ""}
+                              </span>
+                            </div>
+                          ))
+                        : so && so.qtyA != null
+                          ? <>{so.qtyA} / {so.qtyR}{so.type === "cell" && <span style={{ color: "#1D5C9E", fontSize: 9 }}> CELL SHIFT</span>}{so.rwHours ? <span style={{ color: "#8A6A16", fontSize: 9 }}> · {so.rwHours}h RW</span> : ""}</>
+                          : done ? "— / —" : ""}
                       {rwHere && recs.length <= 1 && <div style={{ color: "#8A6A16", fontSize: 9, fontWeight: 800 }}>↻ STD RW</div>}
                     </td>
                     <td style={{ padding: "8px 10px", fontFamily: MONO, whiteSpace: "nowrap", fontSize: 11 }}>
@@ -1509,6 +1536,20 @@ function TravelerView({ job, back, openStation, openSO, releaseHold }) {
           </div>
         </div>
       </div>
+
+      {/* standard rework exit paths — traveler-level configuration */}
+      {job.status !== "complete" && (
+        <div style={{ background: "#FBF7EC", border: "1.5px solid #DDD3B8", borderRadius: 10, padding: "10px 14px", marginTop: 14 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+            <span style={{ fontSize: 11, letterSpacing: 1, fontWeight: 800, color: "#8A6A16" }}>↻ STANDARD REWORK EXIT PATHS — THIS TRAVELER</span>
+            <span style={{ fontSize: 10.5, color: C.dim }}>
+              <b>↩ loop</b> kicks the balance back to a previous op · <b>⟳ task</b> is a defined action (clean, re-form…)
+              then resubmit · every instance and its hours are captured — repeats surface in Analytics
+            </span>
+          </div>
+          <RwTagSetup job={job} setRwTags={setRwTags} />
+        </div>
+      )}
     </div>
   );
 }
@@ -3787,7 +3828,7 @@ function SpaghettiChart({ meta, soJobs }) {
 }
 
 /* ---------------------- SO FAMILY TREE (drawing format) ---------------------- */
-function SOTreeView({ so, jobs, back, openTraveler, setCell, setRwTags }) {
+function SOTreeView({ so, jobs, back, openTraveler, setCell }) {
   const [mode, setMode] = useState("tree");
   const meta = SOS.find(s => s.so === so);
   if (!meta) return null;
@@ -3880,23 +3921,6 @@ function SOTreeView({ so, jobs, back, openTraveler, setCell, setRwTags }) {
         <div style={{ flex: 1 }} />
         {sum.holds > 0 && <span style={{ color: C.red, fontSize: 12.5, fontWeight: 800 }}>■ {sum.holds} TRAVELER{sum.holds > 1 ? "S" : ""} ON HOLD</span>}
       </div>
-
-      {/* standard rework tags (SO review) — exit paths at inspection/finishing steps */}
-      {soJobs.filter(j => j.status === "active").length > 0 && (
-        <div style={{ background: "#FBF7EC", border: "1.5px solid #DDD3B8", borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
-            <span style={{ fontSize: 11, letterSpacing: 1, fontWeight: 800, color: "#8A6A16" }}>↻ STANDARD REWORK TAGS — SO REVIEW</span>
-            <span style={{ fontSize: 10.5, color: C.dim }}>
-              exit paths at inspection/finishing steps · <b>↩ loop</b> kicks the balance back to a previous op ·
-              <b> ⟳ task</b> is a defined action (clean, re-form…) then resubmit · every instance and its hours are
-              captured — repeat instances surface in Analytics for corrective action
-            </span>
-          </div>
-          {soJobs.filter(j => j.status === "active").map(j => (
-            <RwTagSetup key={j.id} job={j} setRwTags={setRwTags} />
-          ))}
-        </div>
-      )}
 
       {/* one-piece flow cell configuration (SO review) */}
       {soJobs.filter(j => j.status === "active").length > 0 && (
