@@ -556,7 +556,7 @@ const SEED_JOBS = [
         note: "CELL BDC-1 shift · OP 20–70 · 4 EA through · 0 rejected/pulled · avg takt 3:52 vs target 4:00 · crew: R.M. · D.L. · J.S. · K.O.",
         ts: "Jul 28, 03:20 PM", qaStamp: "QA-07" }],
     due: "Aug 19",
-    cell: { enabled: true, name: "CELL BDC-1", from: 1, to: 6, takt: 240, target: 8,
+    cell: { enabled: true, name: "CELL BDC-1", loc: "FINAL", from: 1, to: 6, takt: 240, target: 8,
             counts: [6, 5, 5, 4, 3, 3], doneTotal: 4,
             stats: [
               { passes: 6, rejects: 0, cycN: 6, sumCycle: 6 * 225, lastTs: null },
@@ -889,7 +889,7 @@ export default function App() {
         <TravelerView job={curJob} back={() => setView({ name: "map" })}
                       openStation={() => openStation(view.jobId, "traveler")}
                       openSO={() => openSO(curJob?.so)}
-                      releaseHold={releaseHold} setRwTags={setRwTags} />
+                      releaseHold={releaseHold} setRwTags={setRwTags} setCell={setCell} />
       )}
       {view.name === "station" && (curJob?.cell?.enabled && curJob.cur >= curJob.cell.from ? (
         <CellStationView job={curJob} from={view.from} session={session}
@@ -1001,7 +1001,7 @@ function MapView({ jobs, jobZone, selZone, setSelZone, openTraveler, openSO }) {
     return { worst, avgAll };
   };
   const cellChipPos = (j, idx) => {
-    const zid = PARTS[j.part].ops[j.cell.from].zone;
+    const zid = j.cell.loc || PARTS[j.part].ops[j.cell.from].zone;
     if (["SUB", "FINAL", "TEST"].includes(zid)) return [512 + idx * 176, 58]; // strip inside Motor Assembly, beside the assembly rooms
     const z = ZONES.find(zz => zz.id === zid);
     if (!z || z.x == null) return [512 + idx * 176, 58];
@@ -1350,8 +1350,9 @@ function MapView({ jobs, jobZone, selZone, setSelZone, openTraveler, openSO }) {
                   <button onClick={() => openSO(j.so)} style={{ ...btnGhost, flex: 1 }}>SO {j.so} family tree</button>
                 </div>
                 <div style={{ fontSize: 10, color: C.dim, marginTop: 7 }}>
-                  {(c.doneTotal || 0)} of {j.qty} EA through the cell in prior shifts · takt target and shift balance are set
-                  in the SO review panel · station colors: green under takt · amber at takt · red over takt.
+                  Location: <b>{(DEPT_ROWS.find(([z]) => z === (c.loc || PARTS[j.part].ops[c.from].zone))?.[1] || "—")}</b> ·{" "}
+                  {(c.doneTotal || 0)} of {j.qty} EA through the cell in prior shifts · takt target, shift balance, and
+                  location are set on the traveler (or SO review) · station colors: green under takt · amber at takt · red over takt.
                 </div>
               </div>
             </div>
@@ -1409,7 +1410,7 @@ const LegendSwatch = ({ color, border, label }) => (
 );
 
 /* ---------------------- TRAVELER ---------------------- */
-function TravelerView({ job, back, openStation, openSO, releaseHold, setRwTags }) {
+function TravelerView({ job, back, openStation, openSO, releaseHold, setRwTags, setCell }) {
   const [showCard, setShowCard] = useState(false);
   if (!job) return null;
   const p = PARTS[job.part];
@@ -1536,6 +1537,20 @@ function TravelerView({ job, back, openStation, openSO, releaseHold, setRwTags }
           </div>
         </div>
       </div>
+
+      {/* one-piece flow cell — batch ↔ cell toggle for this traveler */}
+      {job.status !== "complete" && (
+        <div style={{ background: "#F4F7FB", border: "1.5px solid #C4D3E4", borderRadius: 10, padding: "10px 14px", marginTop: 14 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+            <span style={{ fontSize: 11, letterSpacing: 1, fontWeight: 800, color: C.navy }}>⚙ ONE-PIECE FLOW CELL — THIS TRAVELER</span>
+            <span style={{ fontSize: 10.5, color: C.dim }}>
+              start as a batch traveler, toggle to a cell when it makes sense — set location, name, first/last op, takt,
+              and shift balance; it carries straight into traveler execution and shows live on the Floor Map
+            </span>
+          </div>
+          <CellSetup job={job} setCell={setCell} />
+        </div>
+      )}
 
       {/* standard rework exit paths — traveler-level configuration */}
       {job.status !== "complete" && (
@@ -4227,10 +4242,13 @@ function CellSetup({ job, setCell }) {
   const [takt, setTakt] = useState(240);
   const [taktCustom, setTaktCustom] = useState("6");
   const [name, setName] = useState("CELL " + job.part.split("-")[0].slice(0, 1) + "-" + job.id.slice(-2));
+  const [loc, setLoc] = useState(null); // null = auto (first cell op's department)
   const c = job.cell;
   const enabled = c?.enabled;
   const eligible = !enabled && job.cur < ops.length - 1 && !job.rw;
   const rangeQa = ops.slice(startIdx, endIdx + 1).some(o => o.qa);
+  const autoZone = ops[startIdx]?.zone;
+  const zoneName = (z) => DEPT_ROWS.find(([id]) => id === z)?.[1] || z;
 
   return (
     <div style={{ background: "#fff", border: `1.5px solid ${enabled ? C.blue : C.line}`, borderRadius: 9,
@@ -4242,7 +4260,7 @@ function CellSetup({ job, setCell }) {
         {enabled ? (
           <>
             <span style={{ fontSize: 9.5, fontWeight: 800, color: "#fff", background: C.blue, borderRadius: 5, padding: "2px 8px" }}>
-              ⚙ {c.name || "CELL"} — OP {ops[c.from].op}–{ops[c.to].op} · TAKT {fmtTakt(c.takt)} · SHIFT {c.target} EA · {(c.doneTotal || 0)} OF {job.qty} THROUGH
+              ⚙ {c.name || "CELL"} — OP {ops[c.from].op}–{ops[c.to].op} · TAKT {fmtTakt(c.takt)} · SHIFT {c.target} EA · {(c.doneTotal || 0)} OF {job.qty} THROUGH · {zoneName(c.loc || PARTS[job.part].ops[c.from].zone).toUpperCase()}
             </span>
             <button onClick={() => setCell(job.id, null)}
               style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 800, border: `1.5px solid ${C.red}`, background: "#fff",
@@ -4271,6 +4289,27 @@ function CellSetup({ job, setCell }) {
           <div style={{ fontSize: 10.5, color: C.dim, margin: "2px 0 8px 0" }}>
             {endIdx - startIdx + 1} stations: {ops.slice(startIdx, endIdx + 1).map(o => o.title).join(" → ")}
             {startIdx > job.cur && <span style={{ color: "#8A6A16", fontWeight: 700 }}> · lot runs OP {ops[job.cur].op}–{ops[startIdx - 1].op} as normal stations, then enters the cell</span>}
+          </div>
+          <div style={{ margin: "2px 0 8px 0" }}>
+            <div style={{ fontSize: 10.5, letterSpacing: 1, color: "#7A7568", fontWeight: 700, marginBottom: 4 }}>
+              CELL LOCATION — WHERE THE CELL PHYSICALLY SITS (MAP LINKAGE)
+            </div>
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              <button onClick={() => setLoc(null)}
+                style={{ padding: "6px 10px", borderRadius: 7, fontSize: 10.5, fontWeight: 800, cursor: "pointer",
+                         border: `1.5px solid ${loc === null ? C.blue : C.line}`,
+                         background: loc === null ? C.blue : "#fff", color: loc === null ? "#fff" : "#4A4F56" }}>
+                AUTO — {zoneName(autoZone).toUpperCase()}
+              </button>
+              {DEPT_ROWS.map(([z, l]) => (
+                <button key={z} onClick={() => setLoc(z)}
+                  style={{ padding: "6px 10px", borderRadius: 7, fontSize: 10.5, fontWeight: 800, cursor: "pointer",
+                           border: `1.5px solid ${loc === z ? C.blue : C.line}`,
+                           background: loc === z ? C.blue : "#fff", color: loc === z ? "#fff" : "#4A4F56" }}>
+                  {l.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
           <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div style={{ width: 170 }}>
@@ -4301,7 +4340,7 @@ function CellSetup({ job, setCell }) {
               <Field label="Shift balance (EA)"><NumInput val={target} set={setTarget} max={job.qty} /></Field>
             </div>
             <button disabled={target < 1 || name.trim().length < 2}
-              onClick={() => { setCell(job.id, { enabled: true, name: name.trim(), from: startIdx, to: endIdx, takt, target,
+              onClick={() => { setCell(job.id, { enabled: true, name: name.trim(), loc, from: startIdx, to: endIdx, takt, target,
                                                  counts: Array(endIdx - startIdx + 1).fill(0),
                                                  stats: Array.from({ length: endIdx - startIdx + 1 }, () => ({ passes: 0, rejects: 0, cycN: 0, sumCycle: 0, lastTs: null })),
                                                  rejectLog: [], doneTotal: 0 }); setOpen(false); }}
@@ -4395,7 +4434,8 @@ function CellStationView({ job, from, back, cellPass, cellReject, cellEndShift, 
               </span>
             </div>
             <div style={{ fontSize: 11.5, color: "#7A7568", marginTop: 2 }}>
-              {job.id} · Lot {job.qty} EA · {(c.doneTotal || 0)} through prior shifts · shift balance <b>{shiftGoal} EA</b> (SO review)
+              {job.id} · Lot {job.qty} EA · {(c.doneTotal || 0)} through prior shifts · shift balance <b>{shiftGoal} EA</b>
+              {" · "}{(DEPT_ROWS.find(([z]) => z === (c.loc || p.ops[c.from].zone))?.[1] || "").toUpperCase()}
               {rejTot > 0 && <span style={{ color: C.red, fontWeight: 700 }}> · {rejTot} rejected/pulled</span>}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
