@@ -223,6 +223,32 @@ const PARTS = {
         accept: "Stock transaction complete.", record: "Location, qty." },
     ],
   },
+  "MOT-5000": {
+    desc: "Brush DC Motor Assembly", rev: "A", color: "#3E8E7E",
+    ops: [
+      { op: 10, qa: true,  dept: "QA",   wc: "KIT",      zone: "STOCK", title: "Kitting",
+        steps: ["Kit HSG-5100 housing, MAG-5101 magnets, BRU-5102 brush set, BCD-5103 brush card, CAP-5104 end cap, BRG-6005 bearings, ENC-5000 encoder, CON-8000 harness per BOM.", "Verify magnet polarity labels and brush lot certs."],
+        accept: "BOM/kitting compliant; lots recorded.", record: "Kitting form, lots, QA stamp." },
+      { op: 20, qa: false, dept: "MFG",  wc: "ASSEMBLE", zone: "FINAL", title: "Magnet Housing Assembly",
+        steps: ["Clean housing bore; verify no corrosion or coating damage.", "Bond MAG-5101 magnets to housing per released method — verify polarity orientation against fixture.", "Clamp per spec; verify magnet seating and gap to bore."],
+        accept: "Magnets seated, polarity correct, adhesive per spec.", record: "Adhesive lot, fixture ID, operator." },
+      { op: 30, qa: false, dept: "MFG",  wc: "ASSEMBLE", zone: "FINAL", title: "Brush Soldering",
+        steps: ["Install BRU-5102 brushes in BCD-5103 brush card.", "Solder shunts per released method — no wicking past crimp; verify brush free travel.", "Verify spring force per drawing."],
+        accept: "Solder joints per workmanship std; brushes travel freely.", record: "Solder lot, operator." },
+      { op: 40, qa: false, dept: "MFG",  wc: "ASSEMBLE", zone: "FINAL", title: "End Cap Assembly",
+        steps: ["Press BRG-6005 bearing into CAP-5104 end cap — force on outer race only.", "Install brush card to end cap; verify lead clocking and clearance."],
+        accept: "Bearing seated; brush card aligned per drawing.", record: "Bearing lot, method." },
+      { op: 50, qa: false, dept: "MFG",  wc: "ASSEMBLE", zone: "FINAL", title: "Motor Assembly",
+        steps: ["Install armature into magnet housing with insertion guide — control magnetic pull.", "Assemble end cap; verify brush seating on commutator.", "Torque fasteners per spec; verify free rotation."],
+        accept: "Free rotation; brushes seated; fasteners torqued.", record: "Torque values, operator." },
+      { op: 60, qa: false, dept: "MFG",  wc: "ASSEMBLE", zone: "FINAL", title: "Encoder Assembly",
+        steps: ["Install ENC-5000; align index per electrical setup.", "Route CON-8000 harness with strain relief; verify pinout continuity."],
+        accept: "Alignment recorded; continuity verified.", record: "Alignment value, continuity results." },
+      { op: 70, qa: true,  dept: "TEST", wc: "TEST",     zone: "TEST",  title: "Final Test & Verification",
+        steps: ["Run-in per released schedule; verify no abnormal brush noise or sparking.", "Measure no-load current, speed, and torque constant per ATP.", "Final visual: workmanship, nameplate, configuration vs. BOM."],
+        accept: "All ATP values within limits; run-in acceptable.", record: "ATP data, equipment ID, QA stamp." },
+    ],
+  },
   "STA-3100": {
     desc: "Stator Assembly (Wound)", rev: "A", color: "#2C8AA0",
     ops: [
@@ -263,6 +289,7 @@ const ITEMS = {
   "ROT-3120": [["SHA-3121","ROTOR SHAFT","1"],["MAG-3122","PERMANENT MAGNET","8"],["SLV-3123","MAGNET RETENTION SLEEVE","1"],["ADH-3124","MAGNET BONDING EPOXY","AR"],["ADH-3125","SLEEVE BONDING EPOXY","AR"]],
   "BRK-4000": [["COI-4101","BRAKE COIL","1"],["BAC-4103","BRAKE BACK IRON","1"],["ARM-4102","ARMATURE PLATE","1"],["SPR-4104","COMPRESSION SPRING","3"],["FRI-4105","FRICTION DISC","1"]],
   "STA-3100": [["WND-3112","THREE-PHASE WINDING","1"],["INS-3113","SLOT LINER","AR"],["VAR-3114","IMPREGNATION VARNISH","AR"]],
+  "MOT-5000": [["HSG-5100","MAGNET HOUSING","1"],["MAG-5101","FERRITE MAGNET","2"],["BRU-5102","BRUSH SET","1"],["BCD-5103","BRUSH CARD","1"],["CAP-5104","END CAP","1"],["BRG-6005","BEARING","2"],["ENC-5000","ENCODER ASSEMBLY","1","▲"],["CON-8000","HARNESS","1"]],
 };
 const CHILDREN = {
   "ACT-1000": ["GH-2000", "MOT-3000", "BRK-4000"],
@@ -271,6 +298,78 @@ const CHILDREN = {
 };
 const buildTree = (p) => ({ part: p, children: (CHILDREN[p] || []).map(buildTree) });
 const treeParts = (p) => { const out = []; (function w(n){ out.push(n.part); n.children.forEach(w); })(buildTree(p)); return out; };
+
+/* ---------- Standard rework paths (exit paths at inspection/test/finish steps) ----------
+   Two shapes, mirroring how kickbacks really happen on the floor:
+   · LOOP — send the balance back to a PREVIOUS op (e.g. inspection returns parts to
+     machining for deburr); parts flow forward again to the trigger op for acceptance.
+   · TASK — a defined standalone action (e.g. excess varnish cleanup, final cleaning),
+     then resubmit to the SAME op.
+   No NCR on the first pass — but every instance and its hours are captured, so the
+   excess time is visible and repeat instances surface for corrective action.
+   Additional tags can be attached per traveler in the SO review panel (like cells).   */
+const STD_REWORK = {
+  "GH-2000:50":  [{ id: "RW-A",  mode: "task", name: "Clean, Re-lube & Checkout", est: 45,
+    steps: ["Disassemble to gear train level only — do not press bearings out.", "Clean gears and carrier with approved solvent; inspect for debris source.", "Re-lube per released spec; reassemble and verify free rotation.", "Resubmit to OP 50."] }],
+  "LAM-3110:40": [{ id: "RW-PC", mode: "task", name: "Excess powder-coat / resin cleanup", est: 30,
+    steps: ["Remove excess cured resin/coating from slots and bore per released method.", "Verify slots clear, no insulation damage.", "Resubmit to post-cure inspection."] }],
+  "LAM-3110:60": [{ id: "RW-DB", mode: "loop", name: "Deburr — return to Finish Machining", returnOp: 50, est: 40,
+    steps: ["Return stack to Machine Shop for deburr of flagged edges.", "Light passes only — no thermal damage, protect insulation.", "Parts flow back through final inspection for acceptance."] }],
+  "STA-3100:40": [{ id: "RW-CF", mode: "task", name: "Coil re-position & re-form", est: 50,
+    steps: ["Adjust coil positioning per drawing; re-form end turns with released tooling.", "Verify clearances to bore and frame; no scraped insulation.", "Resubmit to pre-VPI electrical test."] }],
+  "STA-3100:60": [{ id: "RW-VC", mode: "task", name: "Excess varnish cleanup", est: 35,
+    steps: ["Remove varnish residue from leads, terminations, and mounting faces per released method.", "Verify bore and slots clear; no insulation damage.", "Resubmit to post-cure verification."] }],
+  "STA-3100:70": [{ id: "RW-VC", mode: "task", name: "Excess varnish cleanup", est: 35,
+    steps: ["Remove varnish residue from leads, terminations, and mounting faces per released method.", "Resubmit to final inspection."] }],
+  "MOT-3000:80": [{ id: "RW-C",  mode: "task", name: "Assembly checkout & re-test", est: 40,
+    steps: ["Verify connector seating, pinout continuity, brake gap.", "General assembly checkout — fastener torque witness, harness routing.", "Resubmit to low-speed functional."] }],
+  "MOT-3000:90": [{ id: "RW-C",  mode: "task", name: "Assembly checkout & re-test", est: 40,
+    steps: ["General assembly checkout per ESP.", "Verify brake air gap and encoder alignment records.", "Resubmit to ATP."] }],
+  "BRK-4000:50": [{ id: "RW-D",  mode: "task", name: "Clean, gap & re-test", est: 35,
+    steps: ["Clean armature and friction faces; verify spring stack.", "Re-shim air gap to drawing; general checkout.", "Resubmit to release-voltage test."] }],
+  "MOT-5000:70": [{ id: "RW-E",  mode: "task", name: "Brush seat & re-test", est: 30,
+    steps: ["Inspect commutator film and brush seating; re-seat per released method.", "Clean carbon debris; verify brush spring force.", "Resubmit to OP 70 run-in and ATP."] }],
+};
+/* every product's final inspection carries the universal final-cleaning exit path */
+const FINAL_CLEAN = { id: "RW-FC", mode: "task", name: "Final cleaning — re-clean & resubmit", est: 20,
+  steps: ["Re-clean per released cleaning method.", "Verify FOD-free; preservation and ID intact.", "Resubmit to final inspection."] };
+const reworkOptions = (job, op) => {
+  const custom = (job.rwTags || []).filter(t => t.op === op.op).map(t => ({ ...t, custom: true }));
+  const lib = STD_REWORK[`${job.part}:${op.op}`] || [];
+  const fin = /^final/i.test(op.title) && !lib.some(o => o.id === "RW-FC") ? [FINAL_CLEAN] : [];
+  return [...custom, ...lib, ...fin];
+};
+const rwReturnLabel = (opt, op) => opt.mode === "loop"
+  ? `back to OP ${opt.returnOp}, parts return through OP ${op.op} for acceptance`
+  : `resubmit to OP ${op.op}`;
+
+/* ---------- takt helpers (one-piece flow cells) ---------- */
+const fmtTakt = (sec) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, "0")}`;
+const cellAvg = (s) => (s && s.cycN ? s.sumCycle / s.cycN : null);
+const taktState = (avg, takt) => avg == null ? "idle" : avg <= takt * 0.92 ? "under" : avg <= takt * 1.06 ? "ontakt" : "over";
+const TAKT_COLORS = { under: "#2F8F5B", ontakt: "#B4831B", over: "#C0402E", idle: "#8A93A0" };
+
+/* ---------- On-hand inventory (JobBOSS² sync snapshot — demo seed) ---------- */
+const INV_SEED = {
+  /* GH-2000 */   "GH-2100": 14, "SHA-2101": 12, "PLN-2102": 40, "CAR-2104": 12, "RNG-2105": 11, "BRG-6203": 9,
+  /* ACT-1000 */  "ENC-5000": 8, "HSG-6000": 10, "OUT-7000": 9, "CON-8000": 15,
+  /* MOT/LAM */   "WND-3112": 30, "BRG-6002": 22, "LAM-3111": 2400, "ADH-3112": 6,
+  /* ROT-3120 */  "SHA-3121": 16, "MAG-3122": 46, "SLV-3123": 14, "ADH-3124": 4, "ADH-3125": 3,
+  /* BRK-4000 */  "COI-4101": 18, "BAC-4103": 16, "ARM-4102": 15, "SPR-4104": 40, "FRI-4105": 12,
+  /* STA-3100 */  "INS-3113": 90, "VAR-3114": 5,
+  /* MOT-5000 */  "HSG-5100": 20, "MAG-5101": 44, "BRU-5102": 26, "BCD-5103": 18, "CAP-5104": 20, "BRG-6005": 34,
+};
+/* required qty of one BOM line for a kit (AR lines are draw-from-bulk, tracked but not gating) */
+const lineReq = (it, qty) => it[2] === "AR" ? 0 : parseInt(it[2]) * qty;
+const kitShortages = (parts, qty, inv) => {
+  const shorts = [];
+  parts.forEach(pt => (ITEMS[pt] || []).forEach(it => {
+    const need = lineReq(it, qty);
+    const have = inv[it[0]] ?? 0;
+    if (need > 0 && have < need) shorts.push({ pn: it[0], name: it[1], need, have, part: pt });
+  }));
+  return shorts;
+};
 
 /* ---------- Sales orders ---------- */
 const SOS = [
@@ -284,6 +383,7 @@ const SOS = [
   { so: "4110", part: "BRK-4000", config: "Brake Assembly — spares",     qty: 12, due: "Aug 21" },
   { so: "4111", part: "MOT-3000", config: "Housed Motor Assembly",       qty: 2,  due: "Sep 11" },
   { so: "4112", part: "STA-3100", config: "Stator Assembly",             qty: 4,  due: "Aug 28" },
+  { so: "4113", part: "MOT-5000", config: "Brush DC Motor — cell build", qty: 12, due: "Aug 19" },
 ];
 const soSummary = (so, jobs) => {
   const js = jobs.filter(j => j.so === so);
@@ -425,7 +525,9 @@ const SEED_JOBS = [
   /* SO 4103 — Full Actuator (whole tree in works) */
   { id: "J-4521", so: "4103", part: "ROT-3120", qty: 6, cur: 4, status: "active", operator: "R. Maldonado", signoffs: seed(4, "ROT-3120"), due: "Jul 31" },
   { id: "J-4498", so: "4103", part: "LAM-3110", qty: 6, cur: 3, status: "active", operator: "D. Liu", signoffs: seed(3, "LAM-3110"), due: "Jul 29" },
-  { id: "J-4502", so: "4103", part: "GH-2000",  qty: 6, cur: 3, status: "active", operator: "M. Reyes", signoffs: seed(3, "GH-2000"),  due: "Aug 03" },
+  { id: "J-4502", so: "4103", part: "GH-2000",  qty: 6, cur: 4, status: "active", operator: "M. Reyes", signoffs: seed(4, "GH-2000"),  due: "Aug 03",
+    rw: { id: "RW-A", mode: "task", name: "Clean, Re-lube & Checkout", returnOp: null, est: 45,
+          op: 50, qty: 2, note: "High running torque, units 3 & 5 — clean, re-lube, checkout", ts: "Jul 28, 02:10 PM" } },
   { id: "J-4515", so: "4103", part: "MOT-3000", qty: 6, cur: 2, status: "active", operator: "J. Santos", signoffs: seed(2, "MOT-3000"), due: "Aug 07" },
   { id: "J-4488", so: "4103", part: "BRK-4000", qty: 6, cur: 5, status: "hold",   operator: null,   signoffs: seed(5, "BRK-4000"), due: "Jul 28", holdReason: "NCR-0231 — release voltage out of tolerance" },
   { id: "J-4530", so: "4103", part: "ACT-1000", qty: 6, cur: 0, status: "active", operator: "K. Osei", signoffs: [],                  due: "Aug 14" },
@@ -440,6 +542,20 @@ const SEED_JOBS = [
   { id: "J-4526", so: "4107", part: "GH-2000",  qty: 6, cur: 1, status: "active", operator: null, signoffs: seed(1, "GH-2000"),  due: "Aug 10" },
   /* SO 4109 — Lamination stacks */
   { id: "J-4544", so: "4109", part: "LAM-3110", qty: 20, cur: 2, status: "active", operator: "L. Braun", signoffs: seed(2, "LAM-3110"), due: "Aug 08" },
+  /* SO 4113 — Brush DC motor running as one-piece flow cell (Kyzentree replacement demo) */
+  { id: "J-4560", so: "4113", part: "MOT-5000", qty: 12, cur: 1, status: "active", operator: null,
+    signoffs: seed(1, "MOT-5000"), due: "Aug 19",
+    cell: { enabled: true, name: "CELL BDC-1", from: 1, to: 6, takt: 240, target: 8,
+            counts: [6, 5, 5, 4, 3, 3], doneTotal: 0,
+            stats: [
+              { passes: 6, rejects: 0, cycN: 6, sumCycle: 6 * 225, lastTs: null },
+              { passes: 5, rejects: 1, cycN: 5, sumCycle: 5 * 250, lastTs: null },
+              { passes: 5, rejects: 0, cycN: 5, sumCycle: 5 * 218, lastTs: null },
+              { passes: 4, rejects: 0, cycN: 4, sumCycle: 4 * 262, lastTs: null },
+              { passes: 3, rejects: 0, cycN: 3, sumCycle: 3 * 208, lastTs: null },
+              { passes: 3, rejects: 0, cycN: 3, sumCycle: 3 * 231, lastTs: null },
+            ],
+            rejectLog: [{ op: 30, note: "Cold solder joint, brush shunt — pulled to quality bench", ts: "Jul 29, 09:42 AM", by: "D.L." }] } },
   /* SO 4108 / 4110 / 4111 / 4112 — scheduled, not released (no travelers) */
 ];
 function seed(n, part) {
@@ -448,7 +564,7 @@ function seed(n, part) {
   return Array.from({ length: n }, (_, i) => {
     const hr = 8 + (i % 8);
     return {
-      op: ops[i].op, operator: ppl[i % ppl.length], qtyA: null, qtyR: 0,
+      op: ops[i].op, operator: ppl[i % ppl.length], qtyA: null, qtyR: 0, attempt: 1,
       ts: `Jul ${20 + (i % 5)}, ${hr < 10 ? "0" : ""}${hr}:${15 + (i % 6) * 7} AM`,
       qaStamp: ops[i].qa ? "QA-07" : null,
     };
@@ -525,12 +641,15 @@ function KitCardModal({ kit, part = null, onClose }) {
 /* ============================ APP ============================ */
 export default function App() {
   const [jobs, setJobs] = useState(SEED_JOBS);
-  const [view, setView] = useState({ name: "map" }); // map | sos | so | traveler | station | scan
+  const [view, setView] = useState({ name: "map" }); // map | sos | so | traveler | station | scan | stats
   const [selZone, setSelZone] = useState(null);
   const [toast, setToast] = useState(null);
   const [ncrSeq, setNcrSeq] = useState(232);
   const [plan, setPlan] = useState({ orders: [], hopper: [], docs: {}, kits: [] });
   const [session, setSession] = useState(null); // signed-in station operator
+  const [inv, setInv] = useState(INV_SEED);                 // on-hand snapshot (JobBOSS² sync)
+  const [invLog, setInvLog] = useState([]);                 // pending ERP transactions
+  const [invTs, setInvTs] = useState("Jul 29, 06:00 AM · seed snapshot");
 
   const stats = useMemo(() => {
     const active = jobs.filter(j => j.status !== "complete");
@@ -549,30 +668,172 @@ export default function App() {
   const navAfterStation = (from, jobId) =>
     setView(from === "scan" ? { name: "scan" } : { name: "traveler", jobId });
 
+  const nowTs = () => "Jul 29, " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
   const signOff = (jobId, payload, from) => {
-    setJobs(prev => prev.map(j => {
-      if (j.id !== jobId) return j;
-      const ops = PARTS[j.part].ops;
-      const op = ops[j.cur];
-      const rec = { op: op.op, operator: payload.operator, qtyA: payload.qtyA, qtyR: payload.qtyR,
-                    note: payload.note || null, photos: payload.photos || 0,
-                    ts: "Jul 25, " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-                    qaStamp: op.qa ? payload.inspector : null };
-      const next = j.cur + 1;
-      const done = next >= ops.length;
-      return { ...j, cur: next, status: done ? "complete" : "active", operator: null, signoffs: [...j.signoffs, rec] };
-    }));
     const j = jobs.find(x => x.id === jobId);
+    if (!j) return;
     const ops = PARTS[j.part].ops;
+    const op = ops[j.cur];
+    const attempt = payload.attempt || 1;
+    const rec = { op: op.op, operator: payload.operator, qtyA: payload.qtyA, qtyR: payload.qtyR,
+                  attempt, note: payload.note || null, photos: payload.photos || 0,
+                  rwTag: attempt >= 2 ? (j.rw?.name || null) : (payload.rw?.name || null),
+                  rwId: attempt >= 2 ? (j.rw?.id || null) : (payload.rw?.id || null),
+                  rwMode: attempt >= 2 ? (j.rw?.mode || null) : (payload.rw?.mode || null),
+                  rwHours: payload.rwHours || null,
+                  ts: nowTs(), qaStamp: op.qa ? payload.inspector : null };
+
+    /* first-pass rejects routed to a standard rework exit path — lot stays at this op */
+    if (payload.qtyR > 0 && payload.rework && payload.rw) {
+      const opt = payload.rw;
+      setJobs(prev => prev.map(x => x.id !== jobId ? x
+        : { ...x, operator: null, signoffs: [...x.signoffs, rec],
+            rw: { id: opt.id, mode: opt.mode, name: opt.name, returnOp: opt.returnOp || null, est: opt.est,
+                  op: op.op, qty: payload.qtyR, note: payload.note || opt.name, ts: nowTs() } }));
+      flash(opt.mode === "loop"
+        ? `OP ${op.op}: ${payload.qtyA} accepted first pass · ${payload.qtyR} → ${opt.name} (loop to OP ${opt.returnOp}; returns through OP ${op.op}) — instance captured`
+        : `OP ${op.op}: ${payload.qtyA} accepted first pass · ${payload.qtyR} → ${opt.name} — ${rwReturnLabel(opt, op)} — instance captured`);
+      navAfterStation(from, jobId);
+      return;
+    }
+
+    /* operator chose NC over the standard rework path — lot holds for disposition */
+    if (payload.qtyR > 0 && payload.nc) {
+      const num = `NCR-2026-0${ncrSeq}`;
+      setNcrSeq(n => n + 1);
+      setJobs(prev => prev.map(x => x.id !== jobId ? x
+        : { ...x, status: "hold", operator: null, signoffs: [...x.signoffs, rec],
+            holdReason: `${num} — ${payload.qtyR} EA rejected at OP ${op.op} — operator routed to NC (std rework declined) — ${payload.note || ""}` }));
+      flash(`${num} raised at OP ${op.op} — ${jobId} held for Quality/Engineering disposition`);
+      navAfterStation(from, jobId);
+      return;
+    }
+
+    /* second-pass failure after standard rework — automatic NCR, lot holds */
+    if (payload.qtyR > 0 && attempt >= 2) {
+      const num = `NCR-2026-0${ncrSeq}`;
+      setNcrSeq(n => n + 1);
+      setJobs(prev => prev.map(x => x.id !== jobId ? x
+        : { ...x, status: "hold", operator: null, signoffs: [...x.signoffs, rec],
+            holdReason: `${num} — ${payload.qtyR} EA failed OP ${op.op} after standard rework — auto-escalated to Quality/Engineering` }));
+      flash(`Second-pass failure at OP ${op.op} — ${num} auto-raised; ${jobId} held for disposition (${payload.qtyA} EA passed recorded)`);
+      navAfterStation(from, jobId);
+      return;
+    }
+
+    /* normal advance (includes clean second-pass completion) */
+    setJobs(prev => prev.map(x => {
+      if (x.id !== jobId) return x;
+      const next = x.cur + 1;
+      const done = next >= ops.length;
+      return { ...x, cur: next, status: done ? "complete" : "active", operator: null,
+               rw: null, signoffs: [...x.signoffs, rec] };
+    }));
     const done = j.cur + 1 >= ops.length;
+    const spNote = attempt >= 2 ? ` — rework lot recovered (second pass)` : "";
     if (done) {
-      flash(`${jobId} (SO ${j.so}) complete — traveler PDF archived, moved to Stock`);
+      flash(`${jobId} (SO ${j.so}) complete — traveler PDF archived, moved to Stock${spNote}`);
       from === "scan" ? setView({ name: "scan" }) : setView({ name: "so", so: j.so });
     } else {
       const nz = ops[j.cur + 1].zone;
-      flash(`OP ${ops[j.cur].op} signed off — ${jobId} moves to ${ZONES.find(z => z.id === nz)?.label}`);
+      flash(`OP ${ops[j.cur].op} signed off${spNote} — ${jobId} moves to ${ZONES.find(z => z.id === nz)?.label}`);
       from === "scan" ? setView({ name: "scan" }) : setView({ name: "traveler", jobId });
     }
+  };
+
+  const setRwTags = (jobId, tags) => {
+    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, rwTags: tags } : j));
+    flash(`Standard rework tags updated on ${jobId} — ${tags.length} custom tag${tags.length === 1 ? "" : "s"} attached`);
+  };
+
+  /* ---------- one-piece flow cell (takt-paced, Kyzentree-style accept/reject/support) ---------- */
+  const setCell = (jobId, cell) => {
+    const j0 = jobs.find(j => j.id === jobId);
+    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, cell } : j));
+    if (cell) flash(`${cell.name || "Cell"} enabled on ${jobId} — OP ${PARTS[j0.part].ops[cell.from].op}–${PARTS[j0.part].ops[cell.to].op} · takt ${fmtTakt(cell.takt)} · shift balance ${cell.target} EA`);
+    else flash(`Cell disabled on ${jobId} — traveler returns to lot flow`);
+  };
+  const cellPass = (jobId, stepIdx, opName) => {
+    setJobs(prev => prev.map(j => {
+      if (j.id !== jobId || !j.cell) return j;
+      const c = j.cell;
+      const started = c.counts[0] + (c.stats[0]?.rejects || 0);
+      const avail = stepIdx === 0
+        ? started < c.target && (c.doneTotal || 0) + started < j.qty
+        : c.counts[stepIdx] < c.counts[stepIdx - 1] - (c.stats[stepIdx]?.rejects || 0);
+      if (!avail) return j;
+      const now = Date.now();
+      const counts = c.counts.map((v, i) => i === stepIdx ? v + 1 : v);
+      const stats = c.stats.map((s, i) => {
+        if (i !== stepIdx) return s;
+        const cyc = s.lastTs ? (now - s.lastTs) / 1000 : null;
+        return { ...s, passes: s.passes + 1,
+                 cycN: cyc != null ? s.cycN + 1 : s.cycN,
+                 sumCycle: cyc != null ? s.sumCycle + cyc : s.sumCycle, lastTs: now };
+      });
+      return { ...j, cell: { ...c, counts, stats, lastBy: opName || c.lastBy } };
+    }));
+  };
+  const cellReject = (jobId, stepIdx, note, by) => {
+    const j0 = jobs.find(j => j.id === jobId);
+    const op = j0 && PARTS[j0.part].ops[j0.cell.from + stepIdx];
+    setJobs(prev => prev.map(j => {
+      if (j.id !== jobId || !j.cell) return j;
+      const c = j.cell;
+      /* a reject consumes the unit at this station without passing it on */
+      const canPull = stepIdx === 0
+        ? c.counts[0] + (c.stats[0]?.rejects || 0) < c.target && (c.doneTotal || 0) + c.counts[0] + (c.stats[0]?.rejects || 0) < j.qty
+        : c.counts[stepIdx] + (c.stats[stepIdx]?.rejects || 0) < c.counts[stepIdx - 1];
+      if (!canPull) return j;
+      const stats = c.stats.map((s, i) => i === stepIdx ? { ...s, rejects: s.rejects + 1, lastTs: Date.now() } : s);
+      const rejectLog = [...(c.rejectLog || []), { op: op?.op, note, ts: nowTs(), by: by || "operator" }];
+      return { ...j, cell: { ...c, stats, rejectLog } };
+    }));
+    flash(`⚠ ${j0?.cell.name || "Cell"} — unit REJECTED at OP ${op?.op} (${op?.title}) — pulled to quality bench, alert to Quality (cell keeps running)`);
+  };
+  const cellEndShift = (jobId, payload) => {
+    const j = jobs.find(x => x.id === jobId);
+    if (!j || !j.cell) return;
+    const c = j.cell;
+    const units = c.counts[c.counts.length - 1];
+    const rejTot = c.stats.reduce((a, s) => a + s.rejects, 0);
+    const avgs = c.stats.map(s => s.cycN ? s.sumCycle / s.cycN : null).filter(v => v != null);
+    const avgAll = avgs.length ? avgs.reduce((a, v) => a + v, 0) / avgs.length : null;
+    const opsArr = PARTS[j.part].ops;
+    const doneTotal = (c.doneTotal || 0) + units;
+    const rec = { op: opsArr[c.from].op, opEnd: opsArr[c.to].op, type: "cell",
+                  operator: payload.operator, qtyA: units, qtyR: rejTot, attempt: 1,
+                  note: `${c.name || "Cell"} shift · OP ${opsArr[c.from].op}–${opsArr[c.to].op} · ${units} EA through · ${rejTot} rejected/pulled` +
+                        (avgAll ? ` · avg takt ${fmtTakt(Math.round(avgAll))} vs target ${fmtTakt(c.takt)}` : "") +
+                        ` · crew: ${payload.crew || payload.operator}`,
+                  ts: nowTs(), qaStamp: payload.inspector || null };
+    const finished = doneTotal >= j.qty;
+    setJobs(prev => prev.map(x => x.id !== jobId ? x : finished
+      ? { ...x, cur: c.to + 1, status: c.to + 1 >= opsArr.length ? "complete" : "active",
+          cell: null, operator: null, signoffs: [...x.signoffs, rec] }
+      : { ...x, cell: { ...c, doneTotal, counts: c.counts.map(() => 0),
+                        stats: c.stats.map(() => ({ passes: 0, rejects: 0, cycN: 0, sumCycle: 0, lastTs: null })) },
+          operator: null, signoffs: [...x.signoffs, rec] }));
+    flash(finished
+      ? `${c.name || "Cell"} shift signed off — ${units} EA · all ${j.qty} through; ${jobId} advances past the cell`
+      : `${c.name || "Cell"} shift signed off — ${units} EA through (${doneTotal} of ${j.qty} total); balance rolls to next shift`);
+  };
+
+  /* ---------- inventory (JobBOSS² sync) ---------- */
+  const importInv = (rows, label) => {
+    setInv(prev => { const nx = { ...prev }; rows.forEach(([pn, q]) => { nx[pn.trim()] = parseInt(q) || 0; }); return nx; });
+    setInvTs(nowTs() + " · " + label);
+    flash(`Inventory sync — ${rows.length} part number${rows.length === 1 ? "" : "s"} updated from ${label}`);
+  };
+  const consumeKit = (kit, issuedQty) => {
+    const tx = [];
+    kit.parts.forEach(pt => (ITEMS[pt] || []).forEach(it => {
+      const need = lineReq(it, issuedQty);
+      if (need > 0) tx.push({ ts: nowTs(), pn: it[0], name: it[1], qty: -need, ref: `KIT ${kit.id} · ${pt}`, type: "KIT ISSUE" });
+    }));
+    setInv(prev => { const nx = { ...prev }; tx.forEach(t => { nx[t.pn] = Math.max(0, (nx[t.pn] ?? 0) + t.qty); }); return nx; });
+    setInvLog(l => [...tx, ...l]);
   };
 
   const raiseNCR = (jobId, desc, from) => {
@@ -604,9 +865,12 @@ export default function App() {
       {view.name === "sos" && <SOListView jobs={jobs} openSO={openSO} />}
       {view.name === "plan" && <PlanningView jobs={jobs} plan={plan} setPlan={setPlan} />}
       {view.name === "bw" && <BandwidthView jobs={jobs} plan={plan} />}
-      {view.name === "kit" && <KittingView plan={plan} setPlan={setPlan} />}
+      {view.name === "stats" && <AnalyticsView jobs={jobs} />}
+      {view.name === "kit" && <KittingView plan={plan} setPlan={setPlan} inv={inv} invLog={invLog} invTs={invTs}
+                                            importInv={importInv} consumeKit={consumeKit} />}
       {view.name === "so" && (
-        <SOTreeView so={view.so} jobs={jobs} back={() => setView({ name: "sos" })} openTraveler={openTraveler} />
+        <SOTreeView so={view.so} jobs={jobs} back={() => setView({ name: "sos" })} openTraveler={openTraveler}
+                    setCell={setCell} setRwTags={setRwTags} />
       )}
       {view.name === "scan" && <ScanView jobs={jobs} kits={plan.kits} session={session} setSession={setSession}
                                           openStation={(id) => openStation(id, "scan")} />}
@@ -616,11 +880,16 @@ export default function App() {
                       openSO={() => openSO(curJob?.so)}
                       releaseHold={releaseHold} />
       )}
-      {view.name === "station" && (
+      {view.name === "station" && (curJob?.cell?.enabled && curJob.cur >= curJob.cell.from ? (
+        <CellStationView job={curJob} from={view.from} session={session}
+                         back={() => navAfterStation(view.from, view.jobId)}
+                         cellPass={cellPass} cellReject={cellReject} cellEndShift={cellEndShift}
+                         raiseNCR={raiseNCR} requestSupport={requestSupport} />
+      ) : (
         <StationView job={curJob} from={view.from} session={session}
                      back={() => navAfterStation(view.from, view.jobId)}
                      signOff={signOff} raiseNCR={raiseNCR} requestSupport={requestSupport} />
-      )}
+      ))}
     </div>
   );
 }
@@ -667,11 +936,12 @@ function Header({ stats, view, setView }) {
           <Tab id="kit" label="▦ Kitting" />
           <Tab id="sos" label="≡ Sales Orders" />
           <Tab id="bw" label="▤ Capacity" />
+          <Tab id="stats" label="◪ Analytics" />
           <Tab id="map" label="⌂ Map View" />
           <Tab id="scan" label="▣ Tablet Mode" />
         </div>
         <div style={{ textAlign: "right", marginTop: 6 }}>
-          <span style={{ fontFamily: MONO, fontSize: 11.5, color: "rgba(255,255,255,0.55)" }}>v0.3 demo</span>
+          <span style={{ fontFamily: MONO, fontSize: 11.5, color: "rgba(255,255,255,0.55)" }}>v0.4 demo</span>
         </div>
       </div>
     </div>
@@ -704,8 +974,28 @@ const Badge = ({ n, title, right }) => (
 /* ---------------------- FLOOR MAP ---------------------- */
 function MapView({ jobs, jobZone, selZone, setSelZone, openTraveler, openSO }) {
   const [fit, setFit] = useState(true); // auto fit-to-screen; toggle off for full-width (wall displays)
+  const [selCell, setSelCell] = useState(null);
   const byZone = {};
   jobs.forEach(j => { if (j.status !== "complete") (byZone[jobZone(j)] ||= []).push(j); });
+
+  /* active one-piece flow cells → live takt chips on the map */
+  const cellJobs = jobs.filter(j => j.status !== "complete" && j.cell?.enabled);
+  const cellState = (j) => {
+    const c = j.cell;
+    const states = c.stats.map(s => taktState(cellAvg(s), c.takt));
+    const worst = states.includes("over") ? "over" : states.includes("ontakt") ? "ontakt"
+      : states.includes("under") ? "under" : "idle";
+    const avgs = c.stats.map(s => cellAvg(s)).filter(v => v != null);
+    const avgAll = avgs.length ? avgs.reduce((a, v) => a + v, 0) / avgs.length : null;
+    return { worst, avgAll };
+  };
+  const cellChipPos = (j, idx) => {
+    const zid = PARTS[j.part].ops[j.cell.from].zone;
+    if (["SUB", "FINAL", "TEST"].includes(zid)) return [512 + idx * 176, 58]; // strip inside Motor Assembly, beside the assembly rooms
+    const z = ZONES.find(zz => zz.id === zid);
+    if (!z || z.x == null) return [512 + idx * 176, 58];
+    return [z.x + 6, Math.max(28, z.y + 4)];
+  };
 
   const loadState = (z) => {
     if (!z.cap) return null;
@@ -772,7 +1062,7 @@ function MapView({ jobs, jobZone, selZone, setSelZone, openTraveler, openSO }) {
             const clickable = !z.container && z.id !== "HALL";
             return (
               <g key={z.id}
-                 onClick={clickable ? () => setSelZone(isSel ? null : z.id) : undefined}
+                 onClick={clickable ? () => { setSelZone(isSel ? null : z.id); setSelCell(null); } : undefined}
                  style={{ cursor: clickable ? "pointer" : "default" }}
                  pointerEvents={clickable ? "auto" : "none"}>
                 {z.poly
@@ -868,6 +1158,33 @@ function MapView({ jobs, jobZone, selZone, setSelZone, openTraveler, openSO }) {
             });
           })}
 
+          {/* one-piece flow cells — live takt chips (tap to expand stations) */}
+          {cellJobs.map((j, idx) => {
+            const { worst, avgAll } = cellState(j);
+            const col = TAKT_COLORS[worst];
+            const [cx, cy] = cellChipPos(j, idx);
+            const on = selCell === j.id;
+            return (
+              <g key={"cell" + j.id} onClick={() => { setSelCell(on ? null : j.id); setSelZone(null); }}
+                 style={{ cursor: "pointer" }}>
+                <rect x={cx} y={cy} width={168} height={46} rx={8}
+                      fill="#14243A" stroke={on ? C.gold : col} strokeWidth={on ? 3.5 : 2.5}>
+                  {worst === "over" && <animate attributeName="opacity" values="1;0.75;1" dur="1.8s" repeatCount="indefinite" />}
+                </rect>
+                <circle cx={cx + 15} cy={cy + 15} r={4.5} fill={col}>
+                  <animate attributeName="opacity" values="1;0.35;1" dur="1.6s" repeatCount="indefinite" />
+                </circle>
+                <text x={cx + 26} y={cy + 19} fontSize={11.5} fontFamily={MONO} fontWeight={800} fill="#fff">
+                  ⚙ {j.cell.name || "CELL"}
+                </text>
+                <text x={cx + 12} y={cy + 36} fontSize={9.5} fontFamily={MONO} fontWeight={700} fill="#B9C6D8">
+                  {j.part} · {avgAll != null ? `avg ${fmtTakt(Math.round(avgAll))}` : "no cycles"} / {fmtTakt(j.cell.takt)}
+                  {worst === "over" ? " ▲" : ""}
+                </text>
+              </g>
+            );
+          })}
+
           {/* front entrance */}
           <rect x={1305} y={798} width={122} height={36} fill="#F1F1F2" stroke="#3A3F45" strokeWidth={2} />
           <text x={1366} y={874} fontSize={13} fontFamily={SANS} fontWeight={800} fill="#4A4F56" textAnchor="middle">FRONT</text>
@@ -937,6 +1254,95 @@ function MapView({ jobs, jobZone, selZone, setSelZone, openTraveler, openSO }) {
                   </button>
                 );
               })}
+            </div>
+          );
+        })()}
+
+        {/* cell detail panel — per-station takt */}
+        {selCell && (() => {
+          const j = cellJobs.find(x => x.id === selCell);
+          if (!j) return null;
+          const c = j.cell;
+          const cellOps = PARTS[j.part].ops.slice(c.from, c.to + 1);
+          const { worst, avgAll } = cellState(j);
+          const started = c.counts[0] + (c.stats[0]?.rejects || 0);
+          const wipAt = (i) => i === 0
+            ? Math.max(0, Math.min(c.target, j.qty - (c.doneTotal || 0)) - started)
+            : Math.max(0, c.counts[i - 1] - c.counts[i] - (c.stats[i]?.rejects || 0));
+          return (
+            <div style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: 12, zIndex: 40,
+                          width: "min(680px, 94vw)", maxHeight: "64vh", overflowY: "auto",
+                          background: "#fff", borderRadius: 12, boxShadow: "0 18px 60px rgba(16,26,40,.45)",
+                          border: `2px solid ${TAKT_COLORS[worst]}` }}>
+              <div style={{ background: "#14243A", color: "#fff", padding: "10px 14px", display: "flex", gap: 11,
+                            alignItems: "baseline", flexWrap: "wrap", position: "sticky", top: 0 }}>
+                <span style={{ fontWeight: 800, fontSize: 14, fontFamily: MONO }}>⚙ {c.name || "CELL"}</span>
+                <span style={{ fontFamily: MONO, fontSize: 12 }}>{j.id} · SO {j.so} · {j.part}</span>
+                <span style={{ fontFamily: MONO, fontSize: 11.5, color: TAKT_COLORS[worst], fontWeight: 800 }}>
+                  {avgAll != null ? `AVG ${fmtTakt(Math.round(avgAll))}` : "NO CYCLES"} / TAKT {fmtTakt(c.takt)}{worst === "over" ? " ▲ OVER" : ""}
+                </span>
+                <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 11.5 }}>
+                  {c.counts[c.counts.length - 1]} / {Math.min(c.target, j.qty - (c.doneTotal || 0))} EA this shift
+                </span>
+                <button onClick={() => setSelCell(null)} style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 15 }}>✕</button>
+              </div>
+              <div style={{ padding: "10px 14px" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
+                  <thead>
+                    <tr style={{ color: C.dim, fontSize: 9.5, letterSpacing: 0.8 }}>
+                      {["STATION", "DONE", "WIP", "REJ", "AVG TAKT", "STATUS"].map(h => (
+                        <th key={h} style={{ textAlign: h === "STATION" ? "left" : "right", padding: "4px 8px", borderBottom: `1.5px solid ${C.line}` }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cellOps.map((o, i) => {
+                      const s = c.stats[i] || {};
+                      const avg = cellAvg(s);
+                      const st = taktState(avg, c.takt);
+                      return (
+                        <tr key={o.op} style={{ borderBottom: `1px solid ${C.line}` }}>
+                          <td style={{ padding: "7px 8px" }}>
+                            <span style={{ fontFamily: MONO, fontWeight: 800, color: o.qa ? "#8A6A16" : C.navy }}>OP {o.op}{o.qa ? " ★" : ""}</span>
+                            <span style={{ marginLeft: 7 }}>{o.title}</span>
+                          </td>
+                          <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: MONO, fontWeight: 800 }}>{c.counts[i]}</td>
+                          <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: MONO, color: wipAt(i) ? "#8A6A16" : C.dim }}>{wipAt(i)}</td>
+                          <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: MONO, fontWeight: 800, color: s.rejects ? C.red : C.dim }}>{s.rejects || 0}</td>
+                          <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: MONO, fontWeight: 800, color: TAKT_COLORS[st] }}>
+                            {avg != null ? fmtTakt(Math.round(avg)) : "—"}
+                          </td>
+                          <td style={{ padding: "7px 8px", textAlign: "right" }}>
+                            <span style={{ fontSize: 9, fontWeight: 800, borderRadius: 5, padding: "2px 7px",
+                                           background: TAKT_COLORS[st] + "1E", color: TAKT_COLORS[st], border: `1px solid ${TAKT_COLORS[st]}55` }}>
+                              {st === "over" ? "▲ OVER TAKT" : st === "ontakt" ? "AT TAKT" : st === "under" ? "UNDER" : "IDLE"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {(c.rejectLog || []).length > 0 && (
+                  <div style={{ marginTop: 9 }}>
+                    <div style={{ fontSize: 9.5, letterSpacing: 1, fontWeight: 800, color: C.dim, marginBottom: 4 }}>REJECTED / PULLED UNITS — QUALITY BENCH</div>
+                    {c.rejectLog.map((r, i) => (
+                      <div key={i} style={{ fontSize: 10.5, color: "#7A2A20", background: "#FBEDEA", border: "1px solid #E3B7AF",
+                                            borderRadius: 6, padding: "5px 9px", marginBottom: 4 }}>
+                        <b style={{ fontFamily: MONO }}>OP {r.op}</b> · {r.note} <span style={{ color: "#A26A60" }}>— {r.by} · {r.ts}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <button onClick={() => openTraveler(j.id)} style={{ ...btnPrimary, flex: 1, background: C.navy }}>Open traveler / cell tablet →</button>
+                  <button onClick={() => openSO(j.so)} style={{ ...btnGhost, flex: 1 }}>SO {j.so} family tree</button>
+                </div>
+                <div style={{ fontSize: 10, color: C.dim, marginTop: 7 }}>
+                  {(c.doneTotal || 0)} of {j.qty} EA through the cell in prior shifts · takt target and shift balance are set
+                  in the SO review panel · station colors: green under takt · amber at takt · red over takt.
+                </div>
+              </div>
             </div>
           );
         })()}
@@ -1028,7 +1434,11 @@ function TravelerView({ job, back, openStation, openSO, releaseHold }) {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: "2px solid " + C.navy }}>
           {[["PART NO.", job.part], ["DESCRIPTION", p.desc], ["REV", p.rev], ["JOB NUMBER", job.id],
-            ["SALES ORDER", `SO ${job.so}`], ["QTY", String(job.qty)], ["DUE", job.due], ["STATUS", job.status === "complete" ? "COMPLETE" : job.status === "hold" ? "ON HOLD" : `IN PROCESS — OP ${curOp?.op}`]]
+            ["SALES ORDER", `SO ${job.so}`], ["QTY", String(job.qty)], ["DUE", job.due],
+            ["STATUS", job.status === "complete" ? "COMPLETE" : job.status === "hold" ? "ON HOLD"
+              : job.rw ? `OP ${curOp?.op} — ↻ STD REWORK ${job.rw.qty} EA`
+              : job.cell?.enabled ? `OP ${curOp?.op} — ⚙ CELL FLOW`
+              : `IN PROCESS — OP ${curOp?.op}`]]
             .map(([k, v]) => (
             <div key={k} style={{ padding: "7px 12px", borderRight: "1px solid #D8D4C8", borderBottom: "1px solid #D8D4C8" }}>
               <div style={{ fontSize: 9.5, color: "#7A7568", letterSpacing: 1 }}>{k}</div>
@@ -1059,7 +1469,9 @@ function TravelerView({ job, back, openStation, openSO, releaseHold }) {
               {p.ops.map((op, i) => {
                 const done = i < job.cur;
                 const isCur = i === job.cur && job.status !== "complete";
-                const so = job.signoffs.find(s => s.op === op.op);
+                const recs = job.signoffs.filter(s => s.op === op.op);
+                const so = recs[recs.length - 1];
+                const rwHere = recs.some(r => r.attempt >= 2) || (job.rw && job.rw.op === op.op);
                 return (
                   <tr key={op.op} style={{
                     background: isCur ? "#FBEED3" : op.qa && !done ? "#FBF6E8" : done ? "#EFF3EC" : "transparent",
@@ -1074,8 +1486,11 @@ function TravelerView({ job, back, openStation, openSO, releaseHold }) {
                       <b>{op.title}.</b> <span style={{ color: "#5A5648" }}>{op.steps[0]}</span>
                       {isCur && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: "#8A6A16" }}>◄ CURRENT</span>}
                     </td>
-                    <td style={{ padding: "8px 10px", fontFamily: MONO, whiteSpace: "nowrap" }}>
-                      {so && so.qtyA != null ? `${so.qtyA} / ${so.qtyR}` : done ? "— / —" : ""}
+                    <td style={{ padding: "8px 10px", fontFamily: MONO, whiteSpace: "nowrap", fontSize: 11 }}>
+                      {recs.length > 1
+                        ? recs.map((r, k) => <div key={k}>{r.qtyA != null ? `${r.qtyA} / ${r.qtyR}` : "— / —"} <span style={{ color: "#8A6A16", fontSize: 9 }}>{r.attempt >= 2 ? "2ND PASS" : "1ST PASS"}</span></div>)
+                        : so && so.qtyA != null ? `${so.qtyA} / ${so.qtyR}` : done ? "— / —" : ""}
+                      {rwHere && recs.length <= 1 && <div style={{ color: "#8A6A16", fontSize: 9, fontWeight: 800 }}>↻ STD RW</div>}
                     </td>
                     <td style={{ padding: "8px 10px", fontFamily: MONO, whiteSpace: "nowrap", fontSize: 11 }}>
                       {so ? <>{so.operator} · {so.ts}</> : ""}
@@ -1501,6 +1916,9 @@ function StationView({ job, from, back, signOff, raiseNCR, requestSupport, sessi
     setPhotos(pv => [...pv, ...add].slice(0, 6));
   };
   const takePhoto = (mode) => { photoMode.current = mode; photoRef.current && photoRef.current.click(); };
+  const [rwChoice, setRwChoice] = useState("rework"); // reject routing: standard rework vs NC
+  const [rwSel, setRwSel] = useState(0);              // which rework exit path when several exist
+  const [rwHours, setRwHours] = useState("");         // actual rework hours, entered on resubmission
   if (!job) return null;
   const p = PARTS[job.part];
   const op = p.ops[job.cur];
@@ -1509,11 +1927,19 @@ function StationView({ job, from, back, signOff, raiseNCR, requestSupport, sessi
   const zone = ZONES.find(z => z.id === op.zone);
   const ppe = PPE_BY_CAT[opCategory(op)] || [];
 
-  const effA = disp === "pass" ? job.qty : disp === "fail" ? 0 : qtyA;
-  const effR = disp === "pass" ? 0 : disp === "fail" ? job.qty : qtyR;
-  const splitOk = disp !== "split" || effA + effR === job.qty;
+  const inRework = !!(job.rw && job.rw.op === op.op);       // lot balance resubmitted after standard rework
+  const attempt = inRework ? 2 : 1;
+  const lotQty = inRework ? job.rw.qty : job.qty;
+  const rwOpts = reworkOptions(job, op);
+  const rwOpt = rwOpts[Math.min(rwSel, rwOpts.length - 1)] || null;
+  const rwHoursOk = !inRework || (parseFloat(rwHours) > 0);
+
+  const effA = disp === "pass" ? lotQty : disp === "fail" ? 0 : qtyA;
+  const effR = disp === "pass" ? 0 : disp === "fail" ? lotQty : qtyR;
+  const splitOk = disp !== "split" || effA + effR === lotQty;
   const noteOk = effR === 0 || note.trim().length >= 4;
-  const canSign = !!disp && splitOk && noteOk && operator.trim().length >= 2 &&
+  const routeRework = effR > 0 && attempt === 1 && rwOpts.length > 0 && rwChoice === "rework";
+  const canSign = !!disp && splitOk && noteOk && rwHoursOk && operator.trim().length >= 2 &&
     (!op.qa || (inspector.trim().length >= 2 && stamped)) && job.status === "active";
 
   const segBtn = (key, label, color) => (
@@ -1635,28 +2061,120 @@ function StationView({ job, from, back, signOff, raiseNCR, requestSupport, sessi
 
           {/* disposition */}
           <div style={{ padding: "0 18px 16px 18px" }}>
-            <div style={{ fontSize: 11, letterSpacing: 1.2, color: "#7A7568", fontWeight: 800, marginBottom: 7 }}>DISPOSITION — QTY {job.qty}</div>
+            {inRework && (
+              <div style={{ margin: "0 0 10px 0", background: "#FDF4E4", border: "2px solid #C9A84C", borderRadius: 10, padding: "9px 12px" }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "#8A6A16", letterSpacing: 0.6 }}>
+                  ↻ STANDARD REWORK RESUBMISSION — SECOND PASS · {job.rw.qty} EA · {job.rw.name || "STD REWORK"}
+                </div>
+                <div style={{ fontSize: 11.5, color: "#6B5A20", marginTop: 3 }}>
+                  {job.rw.mode === "loop"
+                    ? <>Balance was looped back to <b>OP {job.rw.returnOp}</b> ({job.rw.ts}) and has returned through this op — {job.rw.note}. </>
+                    : <>{job.rw.name || "Standard rework"} complete ({job.rw.ts}) — {job.rw.note}. </>}
+                  Disposition covers the <b>{job.rw.qty} EA rework balance only</b>; first-pass units are already recorded.
+                  A failure on this pass auto-escalates to NCR.
+                </div>
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginTop: 8, flexWrap: "wrap" }}>
+                  <div style={{ width: 170 }}>
+                    <Field label="Actual rework hours (required)">
+                      <input value={rwHours} onChange={e => setRwHours(e.target.value)} placeholder={job.rw.est ? `est ${(job.rw.est / 60).toFixed(1)}h` : "e.g. 0.8"}
+                             style={inputStyle} inputMode="decimal" />
+                    </Field>
+                  </div>
+                  <span style={{ fontSize: 10.5, color: "#6B5A20", flex: 1, minWidth: 200, paddingBottom: 6 }}>
+                    Captured against <b>{job.rw.id || "rework"}</b> — this is the excess time that makes the rework burden
+                    visible in Analytics and flags repeat instances for corrective action.
+                  </span>
+                </div>
+                {!rwHoursOk && <div style={{ fontSize: 10.5, color: C.red, fontWeight: 700, marginTop: 4 }}>Enter the actual rework hours before signing off.</div>}
+              </div>
+            )}
+            <div style={{ fontSize: 11, letterSpacing: 1.2, color: "#7A7568", fontWeight: 800, marginBottom: 7 }}>
+              DISPOSITION — {inRework ? `REWORK BALANCE ${lotQty}` : `QTY ${lotQty}`}{rwOpts.length > 0 && !inRework ? ` · ${rwOpts.length} STD REWORK EXIT PATH${rwOpts.length > 1 ? "S" : ""}` : ""}
+            </div>
             <div style={{ display: "flex", gap: 8 }}>
-              {segBtn("pass", `✓ ALL PASS (${job.qty})`, C.green)}
-              {segBtn("fail", `✗ ALL FAIL (${job.qty})`, C.red)}
+              {segBtn("pass", `✓ ALL PASS (${lotQty})`, C.green)}
+              {segBtn("fail", `✗ ALL FAIL (${lotQty})`, C.red)}
               {segBtn("split", "◐ SPLIT QTY", C.navy)}
             </div>
             {disp === "split" && (
               <div style={{ marginTop: 10 }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <Field label="Qty Accepted"><NumInput val={qtyA} set={setQtyA} max={job.qty} /></Field>
-                  <Field label="Qty Rejected"><NumInput val={qtyR} set={setQtyR} max={job.qty} /></Field>
+                  <Field label="Qty Accepted"><NumInput val={qtyA} set={setQtyA} max={lotQty} /></Field>
+                  <Field label="Qty Rejected"><NumInput val={qtyR} set={setQtyR} max={lotQty} /></Field>
                 </div>
                 {!splitOk && (
                   <div style={{ fontSize: 11.5, color: C.red, fontWeight: 700, marginTop: 5 }}>
-                    Accepted + rejected must equal lot qty ({job.qty}) — currently {qtyA + qtyR}.
+                    Accepted + rejected must equal lot qty ({lotQty}) — currently {qtyA + qtyR}.
                   </div>
                 )}
               </div>
             )}
             {disp && (
               <div style={{ marginTop: 9, fontFamily: MONO, fontSize: 12.5, fontWeight: 700, color: effR > 0 ? C.red : "#2F6B4A" }}>
-                Recording: {effA} accepted / {effR} rejected
+                Recording: {effA} accepted / {effR} rejected{attempt === 2 ? " · second pass" : ""}
+              </div>
+            )}
+
+            {/* reject routing — standard rework exit paths vs non-conformance */}
+            {effR > 0 && attempt === 1 && rwOpts.length > 0 && (
+              <div style={{ marginTop: 10, background: "#F4F1E7", border: "1.5px solid #C9BE96", borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: 10, letterSpacing: 1, fontWeight: 800, color: "#6B5A20", marginBottom: 7 }}>
+                  ROUTE THE {effR} REJECT{effR > 1 ? "S" : ""} — STANDARD REWORK EXIT PATH{rwOpts.length > 1 ? "S" : ""} AT THIS OP (NO NCR · INSTANCE &amp; HOURS CAPTURED)
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {rwOpts.map((o, i) => {
+                    const on = rwChoice === "rework" && rwSel === i;
+                    return (
+                      <button key={i} onClick={() => { setRwChoice("rework"); setRwSel(i); }}
+                        style={{ textAlign: "left", padding: "9px 11px", borderRadius: 8, cursor: "pointer",
+                                 border: `2px solid ${on ? "#8A6A16" : "#C9C4B4"}`,
+                                 background: on ? "#FBF3E2" : "#fff" }}>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: "#6B5A20" }}>
+                          {o.mode === "loop" ? "↩" : "⟳"} {o.name}
+                        </span>
+                        <span style={{ fontSize: 10.5, color: "#8A8578", marginLeft: 8 }}>
+                          {o.mode === "loop" ? `LOOP — ${rwReturnLabel(o, op)}` : `TASK — ${rwReturnLabel(o, op)}`}
+                          {o.est ? ` · est ${o.est} min` : ""}{o.custom ? " · SO tag" : o.id === "RW-FC" ? " · universal" : " · routing library"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                  <button onClick={() => setRwChoice("nc")}
+                    style={{ textAlign: "left", padding: "9px 11px", borderRadius: 8, cursor: "pointer",
+                             border: `2px solid ${rwChoice === "nc" ? C.red : "#C9C4B4"}`,
+                             background: rwChoice === "nc" ? "#FBEDEA" : "#fff" }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: C.red }}>⚠ Report NC instead</span>
+                    <span style={{ fontSize: 10.5, color: "#A26A60", marginLeft: 8 }}>holds the lot for Quality/Engineering disposition</span>
+                  </button>
+                </div>
+                {rwChoice === "rework" && rwOpt ? (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 11.5, color: "#6B5A20", fontWeight: 700, marginBottom: 4 }}>
+                      {rwOpt.mode === "loop" ? `Loop rework — ${rwReturnLabel(rwOpt, op)} (captured as second-pass yield):`
+                                             : `Task rework — ${rwReturnLabel(rwOpt, op)} (captured as second-pass yield):`}
+                    </div>
+                    {rwOpt.steps ? (
+                      <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.5, color: "#5A5648" }}>
+                        {rwOpt.steps.map((s, i) => <li key={i}>{s}</li>)}
+                      </ol>
+                    ) : (
+                      <div style={{ fontSize: 11.5, color: "#5A5648" }}>
+                        Perform "{rwOpt.name}" per applicable released method, then {rwReturnLabel(rwOpt, op)}.
+                      </div>
+                    )}
+                  </div>
+                ) : rwChoice === "nc" ? (
+                  <div style={{ fontSize: 11, color: "#7A2A20", marginTop: 8 }}>
+                    Signing off will hold the lot and route a non-conformance to Quality &amp; Engineering for disposition.
+                  </div>
+                ) : null}
+              </div>
+            )}
+            {effR > 0 && attempt >= 2 && (
+              <div style={{ marginTop: 10, background: "#FBF1EF", border: `1.5px solid ${C.red}`, borderRadius: 10, padding: "9px 12px",
+                            fontSize: 11.5, color: "#7A2A20", fontWeight: 700 }}>
+                ⚠ Second-pass failure after standard rework — signing off will auto-raise an NCR and hold the lot for
+                Quality/Engineering disposition. Passed units are recorded.
               </div>
             )}
             <div style={{ marginTop: 10 }}>
@@ -1703,11 +2221,18 @@ function StationView({ job, from, back, signOff, raiseNCR, requestSupport, sessi
             )}
 
             <button disabled={!canSign}
-              onClick={() => signOff(job.id, { qtyA: effA, qtyR: effR, operator: operator.trim(), inspector: inspector.trim(), note: note.trim(), photos: photos.length }, from)}
+              onClick={() => signOff(job.id, { qtyA: effA, qtyR: effR, operator: operator.trim(), inspector: inspector.trim(),
+                                               note: note.trim(), photos: photos.length, attempt,
+                                               rework: routeRework, rw: routeRework ? rwOpt : null,
+                                               rwHours: inRework ? parseFloat(rwHours) || null : null,
+                                               nc: effR > 0 && attempt === 1 && rwOpts.length > 0 && rwChoice === "nc" }, from)}
               style={{ marginTop: 14, width: "100%", padding: "16px 0", borderRadius: 10, border: "none",
-                       background: canSign ? C.green : "#C9C4B4", color: "#fff", fontWeight: 800, fontSize: 15,
+                       background: canSign ? (routeRework ? "#8A6A16" : C.green) : "#C9C4B4", color: "#fff", fontWeight: 800, fontSize: 15,
                        letterSpacing: 0.6, cursor: canSign ? "pointer" : "not-allowed" }}>
-              {disp ? `SIGN OFF — ${effA} PASS / ${effR} FAIL` : "SELECT DISPOSITION TO SIGN OFF"}
+              {!disp ? "SELECT DISPOSITION TO SIGN OFF"
+                : routeRework ? `SIGN OFF — ${effA} PASS · ${effR} → ${rwOpt?.mode === "loop" ? "LOOP OP " + rwOpt.returnOp : "STD REWORK"}`
+                : effR > 0 && attempt >= 2 ? `SIGN OFF — ${effA} PASS · ${effR} FAIL → AUTO-NCR`
+                : `SIGN OFF — ${effA} PASS / ${effR} FAIL`}
             </button>
 
             {/* Report NC / Request Support */}
@@ -1824,6 +2349,64 @@ const DEPT_CAP = { STOCK:50, QC:45, MACH:40, STACK:40, ROTOR:50, WIND:80, IMPREG
 const CAT_HRS = { kit:2, inspect:2.5, assemble:5, machine:7, test:3.5, cure:7, wind:9, move:1 };
 const WEEK_BUDGET = 20; // touch-time a single job progresses per week (queues included)
 const opHrs = (op, qty) => CAT_HRS[opCategory(op)] * (0.4 + qty / 12);
+
+/* ---------- Seeded 12-week history for Analytics (deterministic — same story every load) ---------- */
+const histWkLabel = (i, n) => new Date(WK0.getTime() - (n - i) * 7 * 86400000)
+  .toLocaleDateString("en-US", { month: "short", day: "numeric" });
+const HIST = (() => {
+  let s = 20260729;
+  const rnd = () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; };
+  const depts = ["TEST", "WIND", "SUB", "MACH", "IMPREG", "FINAL"];
+  const n = 12;
+  return Array.from({ length: n }, (_, i) => {
+    const shipped = 4 + Math.floor(rnd() * 6);                      // lots shipped that week
+    const dip = i === 4 || i === 5;                                  // a rough patch mid-quarter for the story
+    const onTime = Math.max(0, shipped - (dip ? 2 : rnd() < 0.72 ? 0 : 1));
+    const tested = 34 + Math.floor(rnd() * 26);                      // units through test ops
+    const fpFail = Math.floor(tested * (dip ? 0.16 + rnd() * 0.05 : 0.06 + rnd() * 0.06));
+    const spRecover = Math.floor(fpFail * (0.7 + rnd() * 0.25));     // recovered via standard rework
+    const ncrs = (dip ? 2 : 0) + (rnd() < 0.55 ? 1 : 0) + (rnd() < 0.25 ? 1 : 0);
+    const byDept = {};
+    for (let k = 0; k < ncrs; k++) {
+      const d = depts[Math.floor(rnd() * (rnd() < 0.5 ? 2 : depts.length))]; // biased to TEST/WIND
+      byDept[d] = (byDept[d] || 0) + 1;
+    }
+    return { wk: histWkLabel(i, n), shipped, onTime,
+             otd: shipped ? Math.round(onTime / shipped * 100) : 100,
+             tested, fp: tested - fpFail, sp: tested - fpFail + spRecover,
+             fpy: Math.round((tested - fpFail) / tested * 100),
+             spy: Math.round((tested - fpFail + spRecover) / tested * 100),
+             ncrs, byDept };
+  });
+})();
+
+/* ---------- Seeded standard-rework instances (12 wk) — the recurring-burden story ---------- */
+const REWORK_HIST = (() => {
+  let s = 8151972;
+  const rnd = () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; };
+  /* weighted so two tags clearly recur — that's the point of capturing instances */
+  const pool = [
+    { id: "RW-DB", part: "LAM-3110", op: 60,  mode: "loop", name: "Deburr — return to Finish Machining", w: 7 },
+    { id: "RW-VC", part: "STA-3100", op: 60,  mode: "task", name: "Excess varnish cleanup",              w: 6 },
+    { id: "RW-PC", part: "LAM-3110", op: 40,  mode: "task", name: "Excess powder-coat / resin cleanup",  w: 3 },
+    { id: "RW-FC", part: "MOT-3000", op: 100, mode: "task", name: "Final cleaning — re-clean & resubmit", w: 3 },
+    { id: "RW-CF", part: "STA-3100", op: 40,  mode: "task", name: "Coil re-position & re-form",          w: 2 },
+    { id: "RW-A",  part: "GH-2000",  op: 50,  mode: "task", name: "Clean, Re-lube & Checkout",           w: 2 },
+    { id: "RW-FC", part: "BRK-4000", op: 60,  mode: "task", name: "Final cleaning — re-clean & resubmit", w: 1 },
+  ];
+  const bag = pool.flatMap(p => Array(p.w).fill(p));
+  const out = [];
+  for (let w = 0; w < 12; w++) {
+    const n = w === 4 || w === 5 ? 3 : rnd() < 0.6 ? 2 : 1; // heavier in the rough weeks
+    for (let k = 0; k < n; k++) {
+      const t = bag[Math.floor(rnd() * bag.length)];
+      const qty = 1 + Math.floor(rnd() * 3);
+      out.push({ wk: histWkLabel(w, 12), id: t.id, part: t.part, op: t.op, mode: t.mode, name: t.name,
+                 qty, hrs: +(qty * (0.35 + rnd() * 0.6)).toFixed(1) });
+    }
+  }
+  return out;
+})();
 
 function layPart(part, qty, startWk, load, weeks, detail, so) {
   let selfStart = startWk;
@@ -2607,6 +3190,107 @@ function BandwidthView({ jobs, plan }) {
           plus the work behind the number. Tap a department name for its full live roster. Planned hopper load is included.
         </div>
       </div>
+
+      {/* ---------- capacity trending — the bow wave ---------- */}
+      <BowWave load={load} weeks={period} />
+    </div>
+  );
+}
+
+/* ---------------------- CAPACITY TREND — BOW WAVE ---------------------- */
+function BowWave({ load, weeks }) {
+  const capTot = DEPT_ROWS.reduce((a, [z]) => a + DEPT_CAP[z], 0);
+  const { rows, deptCarry } = useMemo(() => {
+    const sched = Array.from({ length: weeks }, (_, w) => DEPT_ROWS.reduce((a, [z]) => a + (load[z]?.[w] || 0), 0));
+    const rows = []; let carry = 0;
+    for (let w = 0; w < weeks; w++) {
+      const total = sched[w] + carry;
+      const overflow = Math.max(0, total - capTot);
+      rows.push({ w, sched: sched[w], carryIn: carry, total, overflow });
+      carry = overflow;
+    }
+    /* per-dept cumulative overflow to name where the wave is coming from */
+    const deptCarry = DEPT_ROWS.map(([z, name]) => {
+      let c = 0;
+      for (let w = 0; w < weeks; w++) c = Math.max(0, (load[z]?.[w] || 0) + c - DEPT_CAP[z]);
+      return { z, name, carry: c };
+    }).filter(d => d.carry > 0.5).sort((a, b) => b.carry - a.carry);
+    return { rows, deptCarry };
+  }, [load, weeks]);
+
+  const peak = rows.reduce((a, r) => Math.max(a, r.total), capTot);
+  const waveEnd = rows[rows.length - 1].overflow;
+  const firstOver = rows.find(r => r.overflow > 0);
+  const W = 780, H = 210, padL = 46, padR = 12, padT = 16, padB = 26;
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const bw = iw / weeks * 0.6;
+  const y = (v) => padT + (1 - v / (peak * 1.08)) * ih;
+
+  return (
+    <div style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 10, padding: 12, marginTop: 14 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
+        <span style={{ fontSize: 11.5, letterSpacing: 1.1, fontWeight: 800, color: C.navy }}>CAPACITY TREND — BOW WAVE</span>
+        <span style={{ fontSize: 10.5, color: C.dim }}>
+          demand vs. total plant capacity ({Math.round(capTot)}h/wk) · unfinished hours cascade into the next week
+        </span>
+        {waveEnd > 0.5 && (
+          <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, color: "#fff", background: C.red,
+                         borderRadius: 5, padding: "3px 9px" }}>
+            ⚠ {Math.round(waveEnd)}h STILL UNPLACED AT WK {weeks}
+          </span>
+        )}
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 560, display: "block" }}>
+          {[0, Math.round(capTot), Math.round(peak)].filter((v, i, a) => a.indexOf(v) === i).map(t => (
+            <g key={t}>
+              <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="#E4E7EC" />
+              <text x={padL - 6} y={y(t) + 3.5} textAnchor="end" fontSize="10" fill="#8A93A0" fontFamily={MONO}>{t}h</text>
+            </g>
+          ))}
+          <line x1={padL} x2={W - padR} y1={y(capTot)} y2={y(capTot)} stroke={C.gold} strokeWidth="2" strokeDasharray="7 4" />
+          <text x={W - padR} y={y(capTot) - 5} textAnchor="end" fontSize="9.5" fontWeight="800" fill="#8A6A16" fontFamily={MONO}>PLANT CAPACITY</text>
+          {rows.map(r => {
+            const cx = padL + (r.w + 0.5) / weeks * iw;
+            const hS = r.sched / (peak * 1.08) * ih;
+            const hC = r.carryIn / (peak * 1.08) * ih;
+            return (
+              <g key={r.w}>
+                {/* scheduled demand */}
+                <rect x={cx - bw / 2} y={y(r.sched)} width={bw} height={hS} rx="2" fill={C.navy} opacity="0.85" />
+                {/* carried-in bow wave stacked on top */}
+                {r.carryIn > 0.5 && (
+                  <rect x={cx - bw / 2} y={y(r.total)} width={bw} height={hC} rx="2" fill={C.red} opacity="0.9" />
+                )}
+                {r.carryIn > 0.5 && (
+                  <text x={cx} y={y(r.total) - 4} textAnchor="middle" fontSize="9" fontWeight="800" fill="#8A2A1E" fontFamily={MONO}>
+                    +{Math.round(r.carryIn)}h
+                  </text>
+                )}
+                <text x={cx} y={H - 8} textAnchor="middle" fontSize="9.5" fill={r.w === 0 ? C.navy : "#8A93A0"}
+                      fontWeight={r.w === 0 ? 800 : 500} fontFamily={MONO}>
+                  {r.w === 0 ? "NOW" : wkLabel(r.w)}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <div style={{ display: "flex", gap: 14, fontSize: 10.5, marginTop: 4, flexWrap: "wrap" }}>
+        <span><span style={{ display: "inline-block", width: 10, height: 10, background: C.navy, borderRadius: 2, opacity: 0.85 }} /> scheduled demand</span>
+        <span><span style={{ display: "inline-block", width: 10, height: 10, background: C.red, borderRadius: 2 }} /> bow wave — hours pushed in from prior weeks</span>
+        <span><span style={{ color: "#8A6A16", fontWeight: 800 }}>- -</span> total plant capacity</span>
+      </div>
+      <div style={{ fontSize: 11, color: C.text, marginTop: 8, lineHeight: 1.55 }}>
+        {firstOver
+          ? <>Demand first exceeds capacity in <b>{firstOver.w === 0 ? "the current week" : "WK " + (firstOver.w + 1)}</b> — the
+              overflow doesn't disappear, it becomes next week's red block. {deptCarry.length > 0 && <>The wave is building in{" "}
+              <b>{deptCarry.slice(0, 3).map(d => `${d.name} (+${Math.round(d.carry)}h)`).join(", ")}</b>.</>}{" "}
+              {waveEnd > 0.5
+                ? <>By the end of the window <b>{Math.round(waveEnd)}h is still unplaced</b> — that work slips past the horizon without overtime, added shifts, or offload.</>
+                : <>The wave is absorbed within the window — later-week slack recovers it.</>}</>
+          : <>Demand stays inside plant capacity across the window — no bow wave is forming at current load.</>}
+      </div>
     </div>
   );
 }
@@ -2707,17 +3391,32 @@ function ReleaseModal({ order, hop, kits, onClose, onCreate }) {
 }
 
 /* ---------------------- KITTING ---------------------- */
-function KittingView({ plan, setPlan }) {
+function KittingView({ plan, setPlan, inv, invLog, invTs, importInv, consumeKit }) {
   const [draft, setDraft] = useState({});
   const [cardKit, setCardKit] = useState(null);
+  const [invOpen, setInvOpen] = useState(false);
+  const [txOpen, setTxOpen] = useState(false);
+  const csvRef = useRef(null);
   const get = (k) => draft[k.id] || { qty: k.qty, note: "", kitter: "" };
   const upd = (id, patch) => setDraft(d => ({ ...d, [id]: { ...(d[id] || {}), ...patch } }));
   const issue = (k) => {
     const dr = get(k);
-    const rec = { ...k, status: "issued", issuedQty: dr.qty ?? k.qty, note: dr.note || "", kitter: dr.kitter.trim(),
+    const iq = dr.qty ?? k.qty;
+    const rec = { ...k, status: "issued", issuedQty: iq, note: dr.note || "", kitter: dr.kitter.trim(),
                   ts: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) };
     setPlan(p => ({ ...p, kits: p.kits.map(x => x.id === k.id ? rec : x) }));
-    setCardKit(rec); // kit card pops immediately on issue
+    consumeKit(k, iq); // decrement on-hand + queue JobBOSS² transaction
+    setCardKit(rec);   // kit card pops immediately on issue
+  };
+  const onCsv = (file) => {
+    if (!file) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      const rows = String(rd.result).split(/\r?\n/).map(l => l.split(",").map(s => s.trim()))
+        .filter(r => r.length >= 2 && r[0] && !isNaN(parseInt(r[1])) && !/^pn$|^part/i.test(r[0]));
+      if (rows.length) importInv(rows.map(r => [r[0], r[1]]), `CSV "${file.name}"`);
+    };
+    rd.readAsText(file);
   };
   const weeks = [...new Set(plan.kits.map(k => k.week))].sort((a, b) => a - b);
   const awaiting = plan.hopper.filter(h => (h.remaining || []).length > 0);
@@ -2728,18 +3427,26 @@ function KittingView({ plan, setPlan }) {
         <span style={{ fontFamily: MONO, color: PARTS[part].color }}>{part}</span> — {PARTS[part].desc}
         <span style={{ color: C.dim, fontWeight: 600 }}> · kit for qty {qty}</span>
       </div>
-      {(ITEMS[part] || []).map(it => (
-        <div key={it[0]} style={{ display: "flex", gap: 8, fontSize: 10.5, fontFamily: MONO, color: "#4A5462",
-                                  padding: "2px 0 2px 14px" }}>
-          <span style={{ width: 86, fontWeight: 700 }}>{it[0]}</span>
-          <span style={{ flex: 1 }}>{it[1]}</span>
-          <span style={{ width: 54, textAlign: "right", color: C.dim }}>{it[2]}/EA</span>
-          <span style={{ width: 66, textAlign: "right", fontWeight: 800, color: C.navy }}>
-            {it[2] === "AR" ? "AR" : `${parseInt(it[2]) * qty} EA`}
-          </span>
-          {it[3] && <span style={{ color: C.amber, fontWeight: 800 }}>{it[3]}</span>}
-        </div>
-      ))}
+      {(ITEMS[part] || []).map(it => {
+        const need = lineReq(it, qty);
+        const have = inv[it[0]] ?? 0;
+        const short = need > 0 && have < need;
+        return (
+          <div key={it[0]} style={{ display: "flex", gap: 8, fontSize: 10.5, fontFamily: MONO, color: "#4A5462",
+                                    padding: "2px 0 2px 14px", background: short ? "#FBEDEA" : "transparent", borderRadius: 4 }}>
+            <span style={{ width: 86, fontWeight: 700 }}>{it[0]}</span>
+            <span style={{ flex: 1 }}>{it[1]}</span>
+            <span style={{ width: 54, textAlign: "right", color: C.dim }}>{it[2]}/EA</span>
+            <span style={{ width: 66, textAlign: "right", fontWeight: 800, color: short ? C.red : C.navy }}>
+              {it[2] === "AR" ? "AR" : `${need} EA`}
+            </span>
+            <span style={{ width: 84, textAlign: "right", fontWeight: 700, color: short ? C.red : "#2F6B4A" }}>
+              {it[2] === "AR" ? `bulk · ${have}` : short ? `SHORT ${need - have} (OH ${have})` : `OH ${have}`}
+            </span>
+            {it[3] && <span style={{ color: C.amber, fontWeight: 800 }}>{it[3]}</span>}
+          </div>
+        );
+      })}
     </div>
   );
 
@@ -2747,6 +3454,64 @@ function KittingView({ plan, setPlan }) {
     <div style={{ maxWidth: 1160, margin: "0 auto", padding: "0 18px 60px 18px" }}>
       <Badge n={1} title="KITTING — RELEASE QUEUE"
         right={<span style={{ fontSize: 11.5, color: C.dim }}>{plan.kits.filter(k => k.status === "due").length} due · {plan.kits.filter(k => k.status === "issued").length} issued</span>} />
+
+      {/* JobBOSS² inventory sync */}
+      <input type="file" accept=".csv,text/csv" ref={csvRef} style={{ display: "none" }}
+             onChange={e => { onCsv(e.target.files?.[0]); e.target.value = ""; }} />
+      <div style={{ background: "#EFF4FA", border: "1.5px solid #B9CFE6", borderRadius: 10, padding: "9px 12px",
+                    display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: "#44607F", letterSpacing: 0.5 }}>⇩ JOBBOSS² INVENTORY</span>
+        <span style={{ fontSize: 10.5, color: "#59636F" }}>on-hand snapshot · {invTs}</span>
+        <div style={{ flex: 1 }} />
+        <button onClick={() => csvRef.current?.click()} style={{ ...miniBtn, borderColor: "#B9CFE6", color: "#44607F" }}>Import CSV (PN,QTY)</button>
+        <button onClick={() => importInv(Object.entries(INV_SEED), "JobBOSS² sync (demo)")} style={{ ...miniBtn, borderColor: "#B9CFE6", color: "#44607F" }}>⟳ Re-sync (demo)</button>
+        <button onClick={() => { setInvOpen(o => !o); setTxOpen(false); }} style={{ ...miniBtn, borderColor: invOpen ? C.navy : "#B9CFE6", color: C.navy }}>
+          {invOpen ? "▾" : "▸"} On-hand ({Object.keys(inv).length})
+        </button>
+        <button onClick={() => { setTxOpen(o => !o); setInvOpen(false); }} style={{ ...miniBtn, borderColor: txOpen ? C.navy : "#B9CFE6", color: invLog.length ? "#8A6A16" : C.navy }}>
+          {txOpen ? "▾" : "▸"} ERP transactions ({invLog.length})
+        </button>
+      </div>
+      {invOpen && (
+        <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "10px 14px", marginBottom: 12,
+                      display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))", gap: 4 }}>
+          {Object.entries(inv).sort((a, b) => a[0].localeCompare(b[0])).map(([pn, q]) => (
+            <div key={pn} style={{ display: "flex", justifyContent: "space-between", fontFamily: MONO, fontSize: 10.5,
+                                   padding: "3px 8px", background: "#F7F8FA", borderRadius: 5 }}>
+              <span style={{ fontWeight: 700, color: "#4A5462" }}>{pn}</span>
+              <span style={{ fontWeight: 800, color: q === 0 ? C.red : C.navy }}>{q}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {txOpen && (
+        <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 10.5, letterSpacing: 1, fontWeight: 800, color: C.dim }}>MATERIAL TRANSACTIONS — PENDING JOBBOSS² ENTRY</span>
+            <span style={{ fontSize: 10, color: C.dim }}>write-back is phase 2 — export and enter in ERP for now</span>
+            {invLog.length > 0 && (
+              <button style={{ ...miniBtn, marginLeft: "auto" }}
+                onClick={() => {
+                  const csv = "ts,pn,qty,ref,type\n" + invLog.map(t => [t.ts, t.pn, t.qty, t.ref, t.type].join(",")).join("\n");
+                  const a = document.createElement("a");
+                  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+                  a.download = "shopworks-erp-transactions.csv"; a.click();
+                }}>⇓ Export CSV</button>
+            )}
+          </div>
+          {invLog.length === 0 && <div style={{ fontSize: 11.5, color: C.dim }}>No transactions yet — issuing a kit records the material draw here.</div>}
+          {invLog.slice(0, 40).map((t, i) => (
+            <div key={i} style={{ display: "flex", gap: 10, fontFamily: MONO, fontSize: 10.5, padding: "3px 0",
+                                  borderBottom: i < Math.min(invLog.length, 40) - 1 ? `1px solid ${C.line}` : "none", flexWrap: "wrap" }}>
+              <span style={{ color: C.dim, width: 118 }}>{t.ts}</span>
+              <span style={{ fontWeight: 800, width: 82 }}>{t.pn}</span>
+              <span style={{ color: C.red, fontWeight: 800, width: 40, textAlign: "right" }}>{t.qty}</span>
+              <span style={{ color: "#4A5462", flex: 1 }}>{t.ref}</span>
+              <span style={{ color: C.dim }}>{t.type}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {plan.kits.length === 0 && (
         <div style={{ background: C.panel, border: `1.5px dashed ${C.line}`, borderRadius: 10, padding: "22px 18px",
@@ -2764,6 +3529,8 @@ function KittingView({ plan, setPlan }) {
           {plan.kits.filter(k => k.week === w).map(k => {
             const dr = get(k);
             const issued = k.status === "issued";
+            const shorts = issued ? [] : kitShortages(k.parts, dr.qty ?? k.qty, inv);
+            const canBuild = shorts.length === 0;
             return (
               <div key={k.id} style={{ background: C.panel, border: `1px solid ${C.line}`,
                                        borderLeft: `5px solid ${issued ? C.green : PARTS[k.part].color}`,
@@ -2776,6 +3543,14 @@ function KittingView({ plan, setPlan }) {
                   <span style={{ fontFamily: MONO, fontSize: 11.5, color: C.dim }}>Qty {k.qty} · Due {k.due}</span>
                   {k.id.includes("-") && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#8A6A16", background: "#FBF3E2",
                                                         border: "1px solid #DDD3B8", borderRadius: 5, padding: "2px 7px" }}>PARTIAL KIT</span>}
+                  {!issued && (canBuild
+                    ? <span style={{ fontSize: 9.5, fontWeight: 800, color: "#2F6B4A", background: "#E7F2EA",
+                                     border: "1px solid #C9D8C4", borderRadius: 5, padding: "2px 7px" }}>✓ CAN BUILD — INVENTORY COVERS BOM</span>
+                    : <span title={shorts.map(s => `${s.pn} short ${s.need - s.have}`).join(" · ")}
+                            style={{ fontSize: 9.5, fontWeight: 800, color: "#fff", background: C.red,
+                                     borderRadius: 5, padding: "2px 7px" }}>
+                        ✗ SHORT {shorts.length} LINE{shorts.length > 1 ? "S" : ""} — {shorts.slice(0, 2).map(s => s.pn).join(", ")}{shorts.length > 2 ? "…" : ""}
+                      </span>)}
                   {issued && (
                     <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 10.5, fontWeight: 800, color: "#2F6B4A" }}>
@@ -3012,7 +3787,7 @@ function SpaghettiChart({ meta, soJobs }) {
 }
 
 /* ---------------------- SO FAMILY TREE (drawing format) ---------------------- */
-function SOTreeView({ so, jobs, back, openTraveler }) {
+function SOTreeView({ so, jobs, back, openTraveler, setCell, setRwTags }) {
   const [mode, setMode] = useState("tree");
   const meta = SOS.find(s => s.so === so);
   if (!meta) return null;
@@ -3106,6 +3881,39 @@ function SOTreeView({ so, jobs, back, openTraveler }) {
         {sum.holds > 0 && <span style={{ color: C.red, fontSize: 12.5, fontWeight: 800 }}>■ {sum.holds} TRAVELER{sum.holds > 1 ? "S" : ""} ON HOLD</span>}
       </div>
 
+      {/* standard rework tags (SO review) — exit paths at inspection/finishing steps */}
+      {soJobs.filter(j => j.status === "active").length > 0 && (
+        <div style={{ background: "#FBF7EC", border: "1.5px solid #DDD3B8", borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+            <span style={{ fontSize: 11, letterSpacing: 1, fontWeight: 800, color: "#8A6A16" }}>↻ STANDARD REWORK TAGS — SO REVIEW</span>
+            <span style={{ fontSize: 10.5, color: C.dim }}>
+              exit paths at inspection/finishing steps · <b>↩ loop</b> kicks the balance back to a previous op ·
+              <b> ⟳ task</b> is a defined action (clean, re-form…) then resubmit · every instance and its hours are
+              captured — repeat instances surface in Analytics for corrective action
+            </span>
+          </div>
+          {soJobs.filter(j => j.status === "active").map(j => (
+            <RwTagSetup key={j.id} job={j} setRwTags={setRwTags} />
+          ))}
+        </div>
+      )}
+
+      {/* one-piece flow cell configuration (SO review) */}
+      {soJobs.filter(j => j.status === "active").length > 0 && (
+        <div style={{ background: "#F4F7FB", border: "1.5px solid #C4D3E4", borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+            <span style={{ fontSize: 11, letterSpacing: 1, fontWeight: 800, color: C.navy }}>⚙ ONE-PIECE FLOW CELLS — SO REVIEW</span>
+            <span style={{ fontSize: 10.5, color: C.dim }}>
+              drag the slider over the routing to set first/last op · takt time, shift balance, and cell name set here ·
+              the named cell shows live takt status on the Floor Map
+            </span>
+          </div>
+          {soJobs.filter(j => j.status === "active").map(j => (
+            <CellSetup key={j.id} job={j} setCell={setCell} />
+          ))}
+        </div>
+      )}
+
       {/* drawing sheet */}
       <div style={{ background: "#FFFFFF", border: "1.5px solid #9AA6B5", boxShadow: "0 4px 22px rgba(31,58,95,.12)" }}>
         {/* title block */}
@@ -3190,6 +3998,853 @@ function SOTreeView({ so, jobs, back, openTraveler }) {
         <div style={{ textAlign: "center", fontSize: 7.5, letterSpacing: 1, color: "#8A93A0", padding: "5px 0 7px 0", borderTop: "1px solid #C9D2DE" }}>
           PROPRIETARY AND CONFIDENTIAL — ISLAND COMPONENTS GROUP, INC. · AS9100D · UNCONTROLLED WHEN PRINTED (DEMO)
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------- ONE-PIECE FLOW CELL: SETUP + STATION ---------------------- */
+/* ---------------------- STANDARD REWORK TAGS: SO REVIEW UTILITY ---------------------- */
+function RwTagSetup({ job, setRwTags }) {
+  const ops = PARTS[job.part].ops;
+  const [open, setOpen] = useState(false);
+  const [trigIdx, setTrigIdx] = useState(Math.min(job.cur, ops.length - 1));
+  const [mode, setMode] = useState("task");
+  const [retIdx, setRetIdx] = useState(Math.max(0, Math.min(job.cur, ops.length - 1) - 1));
+  const [name, setName] = useState("");
+  const [est, setEst] = useState(30);
+  const tags = job.rwTags || [];
+  /* ops that already carry library / universal exit paths — shown so planners see the existing coverage */
+  const covered = ops.filter(o => reworkOptions({ ...job, rwTags: [] }, o).length > 0);
+
+  const add = () => {
+    const t = { op: ops[trigIdx].op, mode, name: name.trim(),
+                returnOp: mode === "loop" ? ops[retIdx].op : null, est, id: "RW-SO" };
+    setRwTags(job.id, [...tags, t]);
+    setName(""); setOpen(false);
+  };
+
+  return (
+    <div style={{ background: "#fff", border: `1.5px solid ${tags.length ? "#C9A84C" : C.line}`, borderRadius: 9,
+                  padding: "8px 11px", marginBottom: 7 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ fontFamily: MONO, fontWeight: 800, fontSize: 12.5, color: C.navy }}>{job.id}</span>
+        <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: PARTS[job.part].color }}>{job.part}</span>
+        <span style={{ fontSize: 10, color: C.dim }}>
+          {covered.length > 0
+            ? <>library paths at {covered.map(o => `OP ${o.op}`).join(", ")}</>
+            : "no library exit paths on this routing yet"}
+        </span>
+        {job.rw && (
+          <span style={{ fontSize: 9.5, fontWeight: 800, color: "#8A6A16", background: "#FBF3E2",
+                         border: "1px solid #DDD3B8", borderRadius: 5, padding: "2px 7px" }}>
+            ↻ ACTIVE — {job.rw.qty} EA IN {job.rw.name?.toUpperCase() || "STD REWORK"}
+          </span>
+        )}
+        <button onClick={() => setOpen(o => !o)}
+          style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 800, border: "1.5px solid #8A6A16",
+                   background: open ? "#8A6A16" : "#fff", color: open ? "#fff" : "#8A6A16", borderRadius: 6,
+                   padding: "4px 10px", cursor: "pointer" }}>
+          {open ? "✕ Cancel" : "＋ Add rework tag…"}
+        </button>
+      </div>
+
+      {tags.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
+          {tags.map((t, i) => (
+            <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10.5, fontWeight: 700,
+                                   background: "#FBF3E2", border: "1px solid #DDD3B8", borderRadius: 6, padding: "4px 9px" }}>
+              <span style={{ color: "#8A6A16", fontWeight: 800 }}>{t.mode === "loop" ? "↩" : "⟳"} OP {t.op}</span>
+              <span>{t.name}</span>
+              {t.mode === "loop" && <span style={{ color: C.dim, fontFamily: MONO }}>→ OP {t.returnOp}</span>}
+              <span style={{ color: C.dim }}>· {t.est}m</span>
+              <button onClick={() => setRwTags(job.id, tags.filter((_, k) => k !== i))}
+                style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontWeight: 800, padding: 0 }}>✕</button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {open && (
+        <div style={{ marginTop: 9, borderTop: `1px dashed ${C.line}`, paddingTop: 9,
+                      display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 10.5, letterSpacing: 1, color: "#7A7568", fontWeight: 700, marginBottom: 4 }}>TRIGGER OP (WHERE REJECTS EXIT)</div>
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              {ops.map((o, i) => i >= job.cur && (
+                <button key={o.op} onClick={() => { setTrigIdx(i); if (retIdx >= i) setRetIdx(Math.max(0, i - 1)); }}
+                  style={{ padding: "6px 9px", borderRadius: 7, fontSize: 10.5, fontWeight: 800, cursor: "pointer",
+                           border: `1.5px solid ${trigIdx === i ? "#8A6A16" : C.line}`,
+                           background: trigIdx === i ? "#8A6A16" : "#fff", color: trigIdx === i ? "#fff" : "#4A4F56" }}>
+                  {o.op}{o.qa ? "★" : ""}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10.5, letterSpacing: 1, color: "#7A7568", fontWeight: 700, marginBottom: 4 }}>SHAPE</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {[["task", "⟳ Task & return"], ["loop", "↩ Loop to previous OP"]].map(([m, l]) => (
+                <button key={m} onClick={() => setMode(m)}
+                  style={{ padding: "9px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: "pointer",
+                           border: `2px solid ${mode === m ? "#8A6A16" : "#C9C4B4"}`,
+                           background: mode === m ? "#FBF3E2" : "#fff", color: "#6B5A20" }}>{l}</button>
+              ))}
+            </div>
+          </div>
+          {mode === "loop" && (
+            <div>
+              <div style={{ fontSize: 10.5, letterSpacing: 1, color: "#7A7568", fontWeight: 700, marginBottom: 4 }}>RETURN TO OP</div>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                {ops.map((o, i) => i < trigIdx && (
+                  <button key={o.op} onClick={() => setRetIdx(i)}
+                    style={{ padding: "6px 9px", borderRadius: 7, fontSize: 10.5, fontWeight: 800, cursor: "pointer",
+                             border: `1.5px solid ${retIdx === i ? C.navy : C.line}`,
+                             background: retIdx === i ? C.navy : "#fff", color: retIdx === i ? "#fff" : "#4A4F56" }}>
+                    {o.op}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div style={{ width: 210, flex: 1, minWidth: 170 }}>
+            <Field label={mode === "loop" ? "Rework name (e.g. Deburr)" : "Task name (e.g. Excess varnish cleanup)"}>
+              <input value={name} onChange={e => setName(e.target.value)} style={inputStyle}
+                     placeholder={mode === "loop" ? "Deburr flagged edges" : "Final cleaning"} />
+            </Field>
+          </div>
+          <div style={{ width: 120 }}>
+            <Field label="Est. minutes"><NumInput val={est} set={setEst} max={480} /></Field>
+          </div>
+          <button disabled={name.trim().length < 3}
+            onClick={add}
+            style={{ padding: "12px 16px", borderRadius: 9, border: "none", fontSize: 12.5, fontWeight: 800,
+                     cursor: name.trim().length >= 3 ? "pointer" : "not-allowed",
+                     background: name.trim().length >= 3 ? "#8A6A16" : "#C9CFD8", color: "#fff" }}>
+            ＋ Attach tag
+          </button>
+          <div style={{ fontSize: 10, color: C.dim, width: "100%" }}>
+            The tag appears as an exit-path option in the disposition panel at OP {ops[trigIdx].op}. Instances and actual
+            hours are captured — once the same tag repeats, Analytics flags it as recurring so the root cause gets worked,
+            not just the parts.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* dual-handle range slider over the routing ops */
+function OpRangeSlider({ ops, minIdx, start, end, setStart, setEnd }) {
+  const trackRef = useRef(null);
+  const dragRef = useRef(null); // "start" | "end" | null
+  const n = ops.length - minIdx;
+  const pct = (i) => n <= 1 ? 0 : (i - minIdx) / (n - 1) * 100;
+  const idxFromX = (clientX) => {
+    const r = trackRef.current.getBoundingClientRect();
+    const t = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    return minIdx + Math.round(t * (n - 1));
+  };
+  const move = (clientX) => {
+    const i = idxFromX(clientX);
+    if (dragRef.current === "start") setStart(Math.min(Math.max(minIdx, i), end - 1));
+    if (dragRef.current === "end") setEnd(Math.max(Math.min(ops.length - 1, i), start + 1));
+  };
+  const down = (e) => {
+    const i = idxFromX(e.clientX);
+    dragRef.current = Math.abs(i - start) <= Math.abs(i - end) ? "start" : "end";
+    e.currentTarget.setPointerCapture(e.pointerId);
+    move(e.clientX);
+  };
+  const Handle = ({ i, label }) => (
+    <div style={{ position: "absolute", left: pct(i) + "%", top: "50%", transform: "translate(-50%,-50%)",
+                  width: 26, height: 26, borderRadius: "50%", background: C.blue, border: "3px solid #fff",
+                  boxShadow: "0 1px 6px rgba(31,58,95,.4)", pointerEvents: "none", zIndex: 2 }}>
+      <div style={{ position: "absolute", top: -20, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap",
+                    fontSize: 9, fontWeight: 800, color: C.blue, fontFamily: MONO }}>{label}</div>
+    </div>
+  );
+  return (
+    <div style={{ padding: "22px 14px 2px 14px" }}>
+      <div ref={trackRef} onPointerDown={down} onPointerMove={(e) => dragRef.current && move(e.clientX)}
+           onPointerUp={() => { dragRef.current = null; }} onPointerCancel={() => { dragRef.current = null; }}
+           style={{ position: "relative", height: 34, cursor: "pointer", touchAction: "none" }}>
+        <div style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 8, transform: "translateY(-50%)",
+                      background: "#DDE3EA", borderRadius: 4 }} />
+        <div style={{ position: "absolute", left: pct(start) + "%", width: (pct(end) - pct(start)) + "%", top: "50%",
+                      height: 8, transform: "translateY(-50%)", background: C.blue, borderRadius: 4, opacity: 0.85 }} />
+        {ops.map((o, i) => i >= minIdx && (
+          <div key={o.op} style={{ position: "absolute", left: pct(i) + "%", top: "50%",
+                                   transform: "translate(-50%,-50%)", width: 4, height: 14, borderRadius: 2,
+                                   background: i >= start && i <= end ? "#fff" : "#B4BDC9", zIndex: 1 }} />
+        ))}
+        <Handle i={start} label={"OP " + ops[start].op} />
+        <Handle i={end} label={"OP " + ops[end].op} />
+      </div>
+      <div style={{ position: "relative", height: 15 }}>
+        {ops.map((o, i) => i >= minIdx && (
+          <span key={o.op} style={{ position: "absolute", left: pct(i) + "%", transform: "translateX(-50%)",
+                                    fontFamily: MONO, fontSize: 9, fontWeight: i >= start && i <= end ? 800 : 600,
+                                    color: i >= start && i <= end ? C.navy : "#8A93A0", whiteSpace: "nowrap" }}>
+            {o.op}{o.qa ? "\u2605" : ""}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CellSetup({ job, setCell }) {
+  const ops = PARTS[job.part].ops;
+  const [open, setOpen] = useState(false);
+  const [startIdx, setStartIdx] = useState(job.cur);
+  const [endIdx, setEndIdx] = useState(Math.min(job.cur + 2, ops.length - 1));
+  const [target, setTarget] = useState(Math.min(8, job.qty));
+  const [takt, setTakt] = useState(240);
+  const [taktCustom, setTaktCustom] = useState("6");
+  const [name, setName] = useState("CELL " + job.part.split("-")[0].slice(0, 1) + "-" + job.id.slice(-2));
+  const c = job.cell;
+  const enabled = c?.enabled;
+  const eligible = !enabled && job.cur < ops.length - 1 && !job.rw;
+  const rangeQa = ops.slice(startIdx, endIdx + 1).some(o => o.qa);
+
+  return (
+    <div style={{ background: "#fff", border: `1.5px solid ${enabled ? C.blue : C.line}`, borderRadius: 9,
+                  padding: "8px 11px", marginBottom: 7 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ fontFamily: MONO, fontWeight: 800, fontSize: 12.5, color: C.navy }}>{job.id}</span>
+        <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: PARTS[job.part].color }}>{job.part}</span>
+        <span style={{ fontSize: 11, color: C.dim }}>Qty {job.qty} · at OP {ops[job.cur]?.op}</span>
+        {enabled ? (
+          <>
+            <span style={{ fontSize: 9.5, fontWeight: 800, color: "#fff", background: C.blue, borderRadius: 5, padding: "2px 8px" }}>
+              ⚙ {c.name || "CELL"} — OP {ops[c.from].op}–{ops[c.to].op} · TAKT {fmtTakt(c.takt)} · SHIFT {c.target} EA · {(c.doneTotal || 0)} OF {job.qty} THROUGH
+            </span>
+            <button onClick={() => setCell(job.id, null)}
+              style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 800, border: `1.5px solid ${C.red}`, background: "#fff",
+                       color: C.red, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>Disable cell</button>
+          </>
+        ) : eligible ? (
+          <button onClick={() => setOpen(o => !o)}
+            style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 800, border: `1.5px solid ${C.blue}`,
+                     background: open ? C.blue : "#fff", color: open ? "#fff" : C.blue, borderRadius: 6,
+                     padding: "4px 10px", cursor: "pointer" }}>
+            {open ? "✕ Cancel" : "⚙ Set up cell…"}
+          </button>
+        ) : (
+          <span style={{ marginLeft: "auto", fontSize: 10, color: C.dim }}>
+            {job.rw ? "in standard rework — finish resubmission first" : "at final op — nothing downstream to cell"}
+          </span>
+        )}
+      </div>
+      {open && !enabled && eligible && (
+        <div style={{ marginTop: 9, borderTop: `1px dashed ${C.line}`, paddingTop: 6 }}>
+          <div style={{ fontSize: 10, letterSpacing: 1, color: C.dim, fontWeight: 800 }}>
+            CELL RANGE — DRAG HANDLES: FIRST OP → LAST OP
+          </div>
+          <OpRangeSlider ops={ops} minIdx={job.cur} start={startIdx} end={endIdx}
+                         setStart={setStartIdx} setEnd={setEndIdx} />
+          <div style={{ fontSize: 10.5, color: C.dim, margin: "2px 0 8px 0" }}>
+            {endIdx - startIdx + 1} stations: {ops.slice(startIdx, endIdx + 1).map(o => o.title).join(" → ")}
+            {startIdx > job.cur && <span style={{ color: "#8A6A16", fontWeight: 700 }}> · lot runs OP {ops[job.cur].op}–{ops[startIdx - 1].op} as normal stations, then enters the cell</span>}
+          </div>
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <div style={{ width: 170 }}>
+              <Field label="Cell name (map linkage)">
+                <input value={name} onChange={e => setName(e.target.value.toUpperCase())} style={inputStyle} maxLength={14} />
+              </Field>
+            </div>
+            <div>
+              <div style={{ fontSize: 10.5, letterSpacing: 1, color: "#7A7568", fontWeight: 700, marginBottom: 4 }}>TAKT TIME</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {[[240, "4 min"], [480, "8 min"]].map(([s, l]) => (
+                  <button key={s} onClick={() => setTakt(s)}
+                    style={{ padding: "10px 14px", borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: "pointer",
+                             border: `2px solid ${takt === s ? C.blue : "#C9C4B4"}`,
+                             background: takt === s ? C.blue : "#fff", color: takt === s ? "#fff" : "#4A4F56" }}>{l}</button>
+                ))}
+                <button onClick={() => setTakt(Math.max(1, Math.round(parseFloat(taktCustom) || 6)) * 60)}
+                  style={{ padding: "10px 10px", borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: "pointer",
+                           border: `2px solid ${takt !== 240 && takt !== 480 ? C.blue : "#C9C4B4"}`,
+                           background: takt !== 240 && takt !== 480 ? C.blue : "#fff",
+                           color: takt !== 240 && takt !== 480 ? "#fff" : "#4A4F56" }}>custom</button>
+                <input value={taktCustom} onChange={e => { setTaktCustom(e.target.value); const m = parseFloat(e.target.value); if (m > 0) setTakt(Math.round(m * 60)); }}
+                       style={{ ...inputStyle, width: 58, textAlign: "center" }} inputMode="decimal" />
+                <span style={{ alignSelf: "center", fontSize: 11, color: C.dim }}>min</span>
+              </div>
+            </div>
+            <div style={{ width: 150 }}>
+              <Field label="Shift balance (EA)"><NumInput val={target} set={setTarget} max={job.qty} /></Field>
+            </div>
+            <button disabled={target < 1 || name.trim().length < 2}
+              onClick={() => { setCell(job.id, { enabled: true, name: name.trim(), from: startIdx, to: endIdx, takt, target,
+                                                 counts: Array(endIdx - startIdx + 1).fill(0),
+                                                 stats: Array.from({ length: endIdx - startIdx + 1 }, () => ({ passes: 0, rejects: 0, cycN: 0, sumCycle: 0, lastTs: null })),
+                                                 rejectLog: [], doneTotal: 0 }); setOpen(false); }}
+              style={{ padding: "12px 16px", borderRadius: 9, border: "none", fontSize: 12.5, fontWeight: 800,
+                       cursor: target >= 1 && name.trim().length >= 2 ? "pointer" : "not-allowed",
+                       background: target >= 1 && name.trim().length >= 2 ? C.blue : "#C9CFD8", color: "#fff" }}>
+              ⚙ Enable cell
+            </button>
+          </div>
+          <div style={{ fontSize: 10, color: C.dim, marginTop: 6 }}>
+            The cell shows on the Floor Map under this name with live takt status.
+            {rangeQa && <span style={{ color: "#8A6A16", fontWeight: 700 }}> ★ Range includes QA hold point(s) — inspector acceptance applied at the shift sign-off for the shift batch.</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CellStationView({ job, from, back, cellPass, cellReject, cellEndShift, raiseNCR, requestSupport, session }) {
+  const [myStep, setMyStep] = useState(0);
+  const [endOpen, setEndOpen] = useState(false);
+  const [operator, setOperator] = useState(session ? session.name : "");
+  const [crew, setCrew] = useState("");
+  const [inspector, setInspector] = useState("");
+  const [stamped, setStamped] = useState(false);
+  const [panel, setPanel] = useState(null);      // 'reject' | 'nc'
+  const [reason, setReason] = useState("");
+  const [, setTick] = useState(0);               // 1s re-render for the takt clock
+  useEffect(() => { const t = setInterval(() => setTick(x => x + 1), 1000); return () => clearInterval(t); }, []);
+  if (!job || !job.cell) return null;
+  const p = PARTS[job.part];
+  const c = job.cell;
+  const cellOps = p.ops.slice(c.from, c.to + 1);
+  const stats = c.stats || [];
+  const doneShift = c.counts[c.counts.length - 1];
+  const remainingLot = job.qty - (c.doneTotal || 0);
+  const shiftGoal = Math.min(c.target, remainingLot);
+  const hasQa = cellOps.some(o => o.qa);
+  const rejTot = stats.reduce((a, s) => a + (s?.rejects || 0), 0);
+  const started = c.counts[0] + (stats[0]?.rejects || 0);
+  const canPass = (i) => job.status === "active" &&
+    (i === 0 ? started < c.target && (c.doneTotal || 0) + started < job.qty
+             : c.counts[i] < c.counts[i - 1] - (stats[i]?.rejects || 0));
+  const wipAt = (i) => i === 0
+    ? Math.max(0, Math.min(c.target, remainingLot) - started)
+    : Math.max(0, c.counts[i - 1] - c.counts[i] - (stats[i]?.rejects || 0));
+  const canEnd = doneShift > 0 && operator.trim().length >= 2 && (!hasQa || (inspector.trim().length >= 2 && stamped));
+
+  /* takt clock for my station */
+  const myStat = stats[myStep] || {};
+  const elapsed = myStat.lastTs ? (Date.now() - myStat.lastTs) / 1000 : null;
+  const myAvg = cellAvg(myStat);
+  const clockPct = elapsed != null ? Math.min(100, elapsed / c.takt * 100) : 0;
+  const overTakt = elapsed != null && elapsed > c.takt;
+
+  const TaktChip = ({ s }) => {
+    const avg = cellAvg(s);
+    const st = taktState(avg, c.takt);
+    return (
+      <span style={{ fontSize: 8.5, fontWeight: 800, fontFamily: MONO, borderRadius: 5, padding: "2px 5px",
+                     background: st === "idle" ? "#F1F3F0" : TAKT_COLORS[st] + "22",
+                     color: TAKT_COLORS[st], border: `1px solid ${TAKT_COLORS[st]}55` }}>
+        {avg == null ? "— TAKT" : fmtTakt(Math.round(avg)) + (st === "over" ? " ▲" : "")}
+      </span>
+    );
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 30, background: C.bg, overflowY: "auto" }}>
+      <div style={{ maxWidth: 880, margin: "0 auto", padding: "12px 12px 90px 12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+          <button onClick={back} style={btnGhost}>{from === "scan" ? "← Scan Next" : `← Traveler ${job.id}`}</button>
+          <div style={{ flex: 1 }} />
+          <span style={{ fontFamily: MONO, fontSize: 11.5, color: C.dim, fontWeight: 700 }}>
+            {c.name || "CELL"} · ONE-PIECE FLOW · TABLET STAYS ON STATION — NO PER-UNIT SCAN
+          </span>
+        </div>
+
+        <div style={{ background: C.paper, color: C.ink, borderRadius: 14, overflow: "hidden", boxShadow: "0 8px 36px rgba(31,58,95,.22)" }}>
+          {/* header */}
+          <div style={{ padding: "14px 18px 10px 18px", borderBottom: "1px solid #DDD8CA" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontFamily: MONO, fontWeight: 800, fontSize: 17, color: C.navy }}>⚙ {c.name || "CELL"}</span>
+              <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 15 }}>SO {job.so} · {job.part}</span>
+              <span style={{ color: "#7A7568" }}>·</span>
+              <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 14, color: "#1D5C9E" }}>OP {cellOps[0].op}–{cellOps[cellOps.length - 1].op}</span>
+              <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 12, fontWeight: 800, color: "#fff",
+                             background: C.navy, borderRadius: 6, padding: "3px 11px" }}>
+                TAKT {fmtTakt(c.takt)}
+              </span>
+            </div>
+            <div style={{ fontSize: 11.5, color: "#7A7568", marginTop: 2 }}>
+              {job.id} · Lot {job.qty} EA · {(c.doneTotal || 0)} through prior shifts · shift balance <b>{shiftGoal} EA</b> (SO review)
+              {rejTot > 0 && <span style={{ color: C.red, fontWeight: 700 }}> · {rejTot} rejected/pulled</span>}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+              <div style={{ flex: 1, height: 10, background: "#E2DED2", borderRadius: 5, overflow: "hidden" }}>
+                <div style={{ width: (shiftGoal ? doneShift / shiftGoal * 100 : 0) + "%", height: "100%", background: C.blue, transition: "width .3s" }} />
+              </div>
+              <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 800 }}>{doneShift} / {shiftGoal} EA this shift</span>
+            </div>
+          </div>
+
+          {/* flow strip — live counts, WIP, takt status per station */}
+          <div style={{ padding: "12px 18px 4px 18px" }}>
+            <div style={{ fontSize: 10, letterSpacing: 1.2, color: "#7A7568", fontWeight: 800, marginBottom: 7 }}>
+              CELL FLOW — TAP YOUR STATION · EACH OPERATOR RUNS THEIR OWN TABLET
+            </div>
+            <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 6 }}>
+              {cellOps.map((o, i) => {
+                const mine = myStep === i;
+                return (
+                  <button key={o.op} onClick={() => setMyStep(i)}
+                    style={{ flex: "1 0 122px", minWidth: 122, textAlign: "center", cursor: "pointer",
+                             border: `2px solid ${mine ? C.blue : "#C9C4B4"}`, borderRadius: 10,
+                             background: mine ? "#EAF1F9" : "#FFFFFF", padding: "8px 6px" }}>
+                    <div style={{ fontFamily: MONO, fontSize: 11, fontWeight: 800, color: o.qa ? "#8A6A16" : C.navy }}>
+                      OP {o.op}{o.qa ? " ★" : ""}
+                    </div>
+                    <div style={{ fontSize: 9.5, fontWeight: 700, color: "#4A4F56", lineHeight: 1.25, minHeight: 24 }}>{o.title}</div>
+                    <div style={{ fontFamily: MONO, fontSize: 17, fontWeight: 800, color: C.navy, marginTop: 2 }}>{c.counts[i]}</div>
+                    <div style={{ fontSize: 8.5, color: "#8A93A0", fontWeight: 700 }}>DONE</div>
+                    <div style={{ display: "flex", gap: 3, justifyContent: "center", marginTop: 3, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 8.5, fontWeight: 800, borderRadius: 5, padding: "2px 4px",
+                                     background: wipAt(i) > 0 ? "#FBF3E2" : "#F1F3F0",
+                                     color: wipAt(i) > 0 ? "#8A6A16" : "#8A93A0" }}>
+                        ▣ {wipAt(i)}
+                      </span>
+                      <TaktChip s={stats[i]} />
+                      {(stats[i]?.rejects || 0) > 0 && (
+                        <span style={{ fontSize: 8.5, fontWeight: 800, color: "#fff", background: C.red, borderRadius: 5, padding: "2px 4px" }}>
+                          ✗ {stats[i].rejects}
+                        </span>
+                      )}
+                    </div>
+                    {mine && <div style={{ fontSize: 8.5, fontWeight: 800, color: C.blue, marginTop: 3 }}>◈ MY STATION</div>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* my station — takt clock + accept / reject / support */}
+          <div style={{ padding: "8px 18px 14px 18px" }}>
+            <div style={{ background: "#fff", border: "1.5px solid #DDD8CA", borderRadius: 12, padding: "12px 14px" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}>
+                <span style={{ fontFamily: MONO, fontWeight: 800, fontSize: 14, color: cellOps[myStep].qa ? "#8A6A16" : C.navy }}>
+                  OP {cellOps[myStep].op}{cellOps[myStep].qa ? " ★" : ""} · {cellOps[myStep].title}
+                </span>
+                <span style={{ fontSize: 10.5, color: "#7A7568" }}>
+                  {session ? `signed in: ${session.name}` : "operator station"} · WIP: {wipAt(myStep)}
+                  {myAvg != null && <> · my avg <b style={{ color: TAKT_COLORS[taktState(myAvg, c.takt)] }}>{fmtTakt(Math.round(myAvg))}</b></>}
+                </span>
+              </div>
+              {/* live takt clock since last handoff */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                <div style={{ flex: 1, height: 12, background: "#EDE9DD", borderRadius: 6, overflow: "hidden" }}>
+                  <div style={{ width: clockPct + "%", height: "100%", transition: "width .5s linear",
+                                background: overTakt ? C.red : clockPct > 85 ? C.amber : C.green }} />
+                </div>
+                <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 800,
+                               color: overTakt ? C.red : "#4A4F56", minWidth: 108, textAlign: "right" }}>
+                  {elapsed == null ? "— awaiting 1st unit" : `${fmtTakt(Math.floor(elapsed))} / ${fmtTakt(c.takt)}`}
+                </span>
+              </div>
+              {overTakt && <div style={{ fontSize: 10.5, color: C.red, fontWeight: 800, marginTop: 3 }}>▲ OVER TAKT — this cycle exceeds the {fmtTakt(c.takt)} target</div>}
+              <ol style={{ margin: "8px 0 0 0", paddingLeft: 20, fontSize: 12.5, lineHeight: 1.5, color: "#4A4F56" }}>
+                {cellOps[myStep].steps.map((st, i) => <li key={i}>{st}</li>)}
+              </ol>
+
+              <button disabled={!canPass(myStep)}
+                onClick={() => cellPass(job.id, myStep, session?.name)}
+                style={{ marginTop: 12, width: "100%", padding: "20px 0", borderRadius: 12, border: "none",
+                         background: canPass(myStep) ? C.green : "#C9C4B4", color: "#fff", fontWeight: 800,
+                         fontSize: 17, letterSpacing: 0.6, cursor: canPass(myStep) ? "pointer" : "not-allowed" }}>
+                {canPass(myStep)
+                  ? `✓ ACCEPT — HAND OFF TO ${myStep < cellOps.length - 1 ? "OP " + cellOps[myStep + 1].op : "SHIFT COMPLETE STACK"}`
+                  : job.status !== "active" ? "JOB ON HOLD"
+                  : myStep === 0 ? "SHIFT BALANCE STAGED — NO MORE STARTS"
+                  : "WAITING ON UPSTREAM STATION"}
+              </button>
+
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button onClick={() => { setPanel(panel === "reject" ? null : "reject"); setReason(""); }}
+                  style={{ flex: 1, padding: "11px 0", borderRadius: 8, background: panel === "reject" ? C.red : "transparent",
+                           border: `2px solid ${C.red}`, color: panel === "reject" ? "#fff" : C.red, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>
+                  ✗ REJECT — PULL UNIT
+                </button>
+                <button onClick={() => { requestSupport(job.id, ["SUPERVISOR", "ENGINEERING"], `${c.name || "Cell"} OP ${cellOps[myStep].op} — station support`); }}
+                  style={{ flex: 1, padding: "11px 0", borderRadius: 8, background: "transparent",
+                           border: `2px solid ${C.blue}`, color: C.blue, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>
+                  🔔 REQUEST SUPPORT
+                </button>
+              </div>
+              {panel === "reject" && (
+                <div style={{ marginTop: 8, background: "#FBF1EF", border: "1.5px solid #E3B7AF", borderRadius: 10, padding: "10px 12px" }}>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input value={reason} onChange={e => setReason(e.target.value)}
+                           placeholder="Why is the unit rejected? Pulled to quality bench — cell keeps running…" style={{ ...inputStyle, flex: 1 }} />
+                    <button disabled={reason.trim().length < 4}
+                      onClick={() => { cellReject(job.id, myStep, reason.trim(), session?.name); setPanel(null); setReason(""); }}
+                      style={{ padding: "10px 16px", borderRadius: 8, border: "none",
+                               background: reason.trim().length >= 4 ? C.red : "#C9C4B4", color: "#fff", fontWeight: 800, cursor: "pointer" }}>
+                      Pull unit
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 10, color: "#7A2A20", marginTop: 5 }}>
+                    Logs the reject at this station, alerts Quality, and removes the unit from the flow. For a systemic
+                    problem that should stop the cell, use ⚠ Non-Conformance below.
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* end-shift sign-off */}
+            <button onClick={() => setEndOpen(o => !o)} disabled={doneShift === 0}
+              style={{ marginTop: 12, width: "100%", padding: "13px 0", borderRadius: 10,
+                       border: `2px solid ${doneShift ? C.navy : "#C9C4B4"}`,
+                       background: endOpen ? C.navy : "#fff", color: endOpen ? "#fff" : doneShift ? C.navy : "#A6A091",
+                       fontWeight: 800, fontSize: 13.5, cursor: doneShift ? "pointer" : "not-allowed" }}>
+              ⏻ END SHIFT — SIGN OFF {doneShift} EA THROUGH {c.name || "CELL"}
+            </button>
+            {endOpen && (
+              <div style={{ marginTop: 8, background: "#EFF4FA", border: "1.5px solid #B9CFE6", borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: 11, color: "#44607F", marginBottom: 8 }}>
+                  Closes this shift's balance: <b>{doneShift} EA</b> through OP {cellOps[0].op}–{cellOps[cellOps.length - 1].op}
+                  {rejTot > 0 && <> · <b style={{ color: C.red }}>{rejTot} rejected</b> (on quality bench)</>}
+                  {(c.doneTotal || 0) + doneShift >= job.qty
+                    ? " — completes the lot; the traveler advances past the cell."
+                    : ` — ${job.qty - (c.doneTotal || 0) - doneShift} EA remain for the next shift.`}
+                  {" "}Units mid-cell stay staged at their station. Takt performance is written to the traveler record.
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: hasQa ? "1fr 1fr" : "1fr", gap: 10 }}>
+                  <Field label="Lead operator initials">
+                    <input value={operator} onChange={e => setOperator(e.target.value)} placeholder="e.g. R.M." style={inputStyle} maxLength={12} />
+                  </Field>
+                  {hasQa && (
+                    <Field label="QA inspector (shift batch)">
+                      <input value={inspector} onChange={e => setInspector(e.target.value)} placeholder="e.g. QA-07" style={inputStyle} maxLength={12} />
+                    </Field>
+                  )}
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  <Field label="Cell crew (optional)">
+                    <input value={crew} onChange={e => setCrew(e.target.value)} placeholder="e.g. R.M. · D.L. · J.S." style={inputStyle} />
+                  </Field>
+                </div>
+                {hasQa && (
+                  <button onClick={() => setStamped(s => !s)}
+                    style={{ marginTop: 10, width: "100%", background: stamped ? "#FBF3E2" : "#fff",
+                             border: `2px ${stamped ? "solid" : "dashed"} ${stamped ? "#8A6A16" : "#C4B98F"}`,
+                             borderRadius: 9, padding: "9px 12px", cursor: "pointer", fontSize: 11.5, fontWeight: 800,
+                             color: "#8A6A16", textAlign: "left" }}>
+                    {stamped ? "✓ QA ACCEPTED — shift batch stamped" : "★ QA HOLD POINT IN CELL — tap to apply inspector stamp for the shift batch"}
+                  </button>
+                )}
+                <button disabled={!canEnd}
+                  onClick={() => { cellEndShift(job.id, { operator: operator.trim(), crew: crew.trim(), inspector: inspector.trim() || null }); setEndOpen(false); setStamped(false); }}
+                  style={{ marginTop: 10, width: "100%", padding: "14px 0", borderRadius: 10, border: "none",
+                           background: canEnd ? C.green : "#C9C4B4", color: "#fff", fontWeight: 800, fontSize: 14,
+                           cursor: canEnd ? "pointer" : "not-allowed" }}>
+                  ✓ SIGN OFF SHIFT — {doneShift} EA
+                </button>
+              </div>
+            )}
+
+            {/* systemic NC — stops the cell */}
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button onClick={() => { setPanel(panel === "nc" ? null : "nc"); setReason(""); }}
+                style={{ flex: 1, padding: "10px 0", borderRadius: 8, background: panel === "nc" ? C.red : "transparent",
+                         border: `1.5px solid ${C.red}`, color: panel === "nc" ? "#fff" : C.red, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>
+                ⚠ Non-Conformance — stop the cell
+              </button>
+            </div>
+            {panel === "nc" && (
+              <div style={{ marginTop: 8, background: "#FBF1EF", border: "1.5px solid #E3B7AF", borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input value={reason} onChange={e => setReason(e.target.value)}
+                         placeholder="Systemic issue — holds the whole cell pending Quality/Engineering…" style={{ ...inputStyle, flex: 1 }} />
+                  <button disabled={reason.trim().length < 4}
+                    onClick={() => raiseNCR(job.id, `${c.name || "Cell"} OP ${cellOps[myStep].op} — ${reason.trim()}`, from)}
+                    style={{ padding: "10px 16px", borderRadius: 8, border: "none",
+                             background: reason.trim().length >= 4 ? C.red : "#C9C4B4", color: "#fff", fontWeight: 800, cursor: "pointer" }}>
+                    Submit
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        <div style={{ textAlign: "center", fontSize: 10.5, color: C.dim, marginTop: 10 }}>
+          One-piece flow — unit counts only, no serials, no per-unit scanning: the tablet stays on the station.
+          ✓ Accept hands one unit downstream and stamps the takt clock · ✗ Reject pulls the unit and alerts Quality
+          without stopping the cell · the shift sign-off is the quality record, closing the balance set in the SO
+          review panel with QA acceptance per shift batch.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------- ANALYTICS (OTD · FPY/SPY · NCR) ---------------------- */
+function TrendChart({ labels, series, yMin = 0, yMax = 100, target = null, unit = "%", height = 190 }) {
+  const W = 760, H = height, padL = 40, padR = 12, padT = 14, padB = 26;
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const x = (i) => padL + (labels.length <= 1 ? 0 : i / (labels.length - 1) * iw);
+  const y = (v) => padT + (1 - (v - yMin) / (yMax - yMin)) * ih;
+  const ticks = [yMin, (yMin + yMax) / 2, yMax];
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 520, display: "block" }}>
+        {ticks.map(t => (
+          <g key={t}>
+            <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="#E4E7EC" strokeWidth="1" />
+            <text x={padL - 6} y={y(t) + 3.5} textAnchor="end" fontSize="10" fill="#8A93A0" fontFamily={MONO}>{t}{unit}</text>
+          </g>
+        ))}
+        {target != null && (
+          <g>
+            <line x1={padL} x2={W - padR} y1={y(target)} y2={y(target)} stroke={C.gold} strokeWidth="1.6" strokeDasharray="6 4" />
+            <text x={W - padR} y={y(target) - 4} textAnchor="end" fontSize="9.5" fill="#8A6A16" fontWeight="800" fontFamily={MONO}>TARGET {target}{unit}</text>
+          </g>
+        )}
+        {labels.map((l, i) => (i % 2 === 0 || labels.length <= 7) && (
+          <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="9.5" fill="#8A93A0" fontFamily={MONO}>{l}</text>
+        ))}
+        {series.map(sr => (
+          <g key={sr.name}>
+            <polyline fill="none" stroke={sr.color} strokeWidth="2.4" strokeLinejoin="round"
+              points={sr.vals.map((v, i) => `${x(i)},${y(v)}`).join(" ")} strokeDasharray={sr.dash || "none"} />
+            {sr.vals.map((v, i) => <circle key={i} cx={x(i)} cy={y(v)} r="3" fill={sr.color} />)}
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+function WeekBars({ labels, vals, color = C.red, yMax = null, height = 150, unit = "" }) {
+  const W = 760, H = height, padL = 34, padR = 10, padT = 12, padB = 24;
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const mx = yMax || Math.max(1, ...vals);
+  const bw = iw / labels.length * 0.62;
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 520, display: "block" }}>
+        {[0, mx].map(t => (
+          <g key={t}>
+            <line x1={padL} x2={W - padR} y1={padT + (1 - t / mx) * ih} y2={padT + (1 - t / mx) * ih} stroke="#E4E7EC" />
+            <text x={padL - 5} y={padT + (1 - t / mx) * ih + 3.5} textAnchor="end" fontSize="10" fill="#8A93A0" fontFamily={MONO}>{t}{unit}</text>
+          </g>
+        ))}
+        {vals.map((v, i) => {
+          const cx = padL + (i + 0.5) / labels.length * iw;
+          return (
+            <g key={i}>
+              <rect x={cx - bw / 2} y={padT + (1 - v / mx) * ih} width={bw} height={v / mx * ih} rx="3" fill={color} opacity={v ? 1 : 0.18} />
+              {v > 0 && <text x={cx} y={padT + (1 - v / mx) * ih - 4} textAnchor="middle" fontSize="9.5" fontWeight="800" fill="#4A5462" fontFamily={MONO}>{v}</text>}
+              {(i % 2 === 0 || labels.length <= 7) && <text x={cx} y={H - 7} textAnchor="middle" fontSize="9.5" fill="#8A93A0" fontFamily={MONO}>{labels[i]}</text>}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function AnalyticsView({ jobs }) {
+  /* live overlay from this session's sign-off records (qtyA recorded) */
+  const live = useMemo(() => {
+    let tested = 0, fp = 0, sp = 0;
+    jobs.forEach(j => j.signoffs.forEach(r => {
+      if (r.qtyA == null || r.type === "cell") return;
+      if (r.attempt === 1) { tested += r.qtyA + r.qtyR; fp += r.qtyA; sp += r.qtyA; }
+      else if (r.attempt >= 2) { sp += r.qtyA; }
+    }));
+    const openNcrs = jobs.filter(j => j.status === "hold" && (j.holdReason || "").includes("NCR"));
+    const inRework = jobs.filter(j => j.rw);
+    return { tested, fp, sp, openNcrs, inRework };
+  }, [jobs]);
+
+  const last12 = HIST;
+  const avg = (f) => Math.round(last12.reduce((a, h) => a + f(h), 0) / last12.length);
+  const totShipped = last12.reduce((a, h) => a + h.shipped, 0);
+  const totOnTime = last12.reduce((a, h) => a + h.onTime, 0);
+  const otd12 = Math.round(totOnTime / totShipped * 100);
+  const totTested = last12.reduce((a, h) => a + h.tested, 0);
+  const fpy12 = Math.round(last12.reduce((a, h) => a + h.fp, 0) / totTested * 100);
+  const spy12 = Math.round(last12.reduce((a, h) => a + h.sp, 0) / totTested * 100);
+  const ncrMo = last12.slice(-4).reduce((a, h) => a + h.ncrs, 0);
+
+  /* NCR pareto by department (seeded + live) */
+  const pareto = useMemo(() => {
+    const m = {};
+    last12.forEach(h => Object.entries(h.byDept).forEach(([d, n]) => { m[d] = (m[d] || 0) + n; }));
+    live.openNcrs.forEach(j => { const z = PARTS[j.part].ops[j.cur]?.zone || "TEST"; m[z] = (m[z] || 0) + 1; });
+    return Object.entries(m).sort((a, b) => b[1] - a[1]);
+  }, [live.openNcrs]);
+  const paretoMax = Math.max(1, ...pareto.map(([, n]) => n));
+
+  const KPI = ({ v, l, c, sub }) => (
+    <span style={{ display: "inline-flex", flexDirection: "column", padding: "8px 15px", minWidth: 108,
+                   background: "#fff", border: `1px solid ${C.line}`, borderLeft: `4px solid ${c}`, borderRadius: 8 }}>
+      <span style={{ fontFamily: MONO, fontSize: 21, fontWeight: 800, color: c, lineHeight: 1.1 }}>{v}</span>
+      <span style={{ fontSize: 10.5, color: C.dim, fontWeight: 700 }}>{l}</span>
+      {sub && <span style={{ fontSize: 9.5, color: "#8A93A0" }}>{sub}</span>}
+    </span>
+  );
+  const Panel = ({ title, note, children }) => (
+    <div style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+        <span style={{ fontSize: 11.5, letterSpacing: 1.1, fontWeight: 800, color: C.navy }}>{title}</span>
+        {note && <span style={{ fontSize: 10.5, color: C.dim }}>{note}</span>}
+      </div>
+      {children}
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 1160, margin: "0 auto", padding: "0 18px 60px 18px" }}>
+      <Badge n={1} title="QUALITY & DELIVERY ANALYTICS"
+        right={<span style={{ fontSize: 11.5, color: C.dim }}>trailing 12 weeks (seeded history) + live session</span>} />
+
+      <div style={{ display: "flex", gap: 9, flexWrap: "wrap", marginBottom: 14 }}>
+        <KPI v={otd12 + "%"} l="on-time delivery" c={otd12 >= 95 ? C.green : otd12 >= 88 ? C.amber : C.red} sub={`${totOnTime} of ${totShipped} lots · 12 wk`} />
+        <KPI v={fpy12 + "%"} l="first pass yield" c={fpy12 >= 92 ? C.green : C.amber} sub={`${totTested} units through test`} />
+        <KPI v={spy12 + "%"} l="second pass yield" c={C.blue} sub="after standard rework" />
+        <KPI v={live.openNcrs.length} l="open NCRs (live)" c={live.openNcrs.length ? C.red : C.green} sub={ncrMo + " raised past 4 wks"} />
+        <KPI v={live.inRework.reduce((a, j) => a + j.rw.qty, 0)} l="units in std rework (live)" c="#8A6A16" sub={live.inRework.map(j => j.id).join(" · ") || "none"} />
+      </div>
+
+      <Panel title="ON-TIME DELIVERY — WEEKLY" note="lots shipped on/before SO due date · gold dash = 95% goal">
+        <TrendChart labels={last12.map(h => h.wk)} target={95}
+          series={[{ name: "OTD", color: C.navy, vals: last12.map(h => h.otd) }]} />
+        <div style={{ fontSize: 10.5, color: C.dim, marginTop: 4 }}>
+          OTD basis: SO promise date vs. final traveler sign-off. The WK {last12[4].wk}–{last12[5].wk} dip tracks the
+          NCR spike below — quality escapes and late deliveries move together.
+        </div>
+      </Panel>
+
+      <Panel title="FIRST PASS vs SECOND PASS YIELD" note="units through test ops · SPY = recovered via standard rework path (no NCR)">
+        <TrendChart labels={last12.map(h => h.wk)} yMin={60} yMax={100} target={92}
+          series={[{ name: "FPY", color: C.green, vals: last12.map(h => h.fpy) },
+                   { name: "SPY", color: C.blue, vals: last12.map(h => h.spy), dash: "5 4" }]} />
+        <div style={{ display: "flex", gap: 14, fontSize: 10.5, marginTop: 4, flexWrap: "wrap" }}>
+          <span><span style={{ color: C.green, fontWeight: 800 }}>—</span> FPY — passed first submission</span>
+          <span><span style={{ color: C.blue, fontWeight: 800 }}>- -</span> SPY — passed by second submission (post standard rework)</span>
+          <span style={{ color: C.dim }}>The gap between the lines is the standard-rework burden — hours spent recovering, not producing.</span>
+        </div>
+        {live.tested > 0 && (
+          <div style={{ marginTop: 8, background: "#F1F7F2", border: "1px solid #C9D8C4", borderRadius: 8, padding: "7px 10px",
+                        fontSize: 11, fontWeight: 700, color: "#2F6B4A" }}>
+            LIVE THIS SESSION — {live.tested} units dispositioned · FPY {Math.round(live.fp / live.tested * 100)}%
+            {live.sp > live.fp ? ` · SPY ${Math.round(live.sp / live.tested * 100)}% (${live.sp - live.fp} recovered)` : ""}
+          </div>
+        )}
+      </Panel>
+
+      <Panel title="STANDARD REWORK — OCCURRENCES & EXCESS HOURS" note="every exit-path instance is captured with actual hours · repeats flag for corrective action">
+        {(() => {
+          /* merge seeded instances with live: completed resubmissions carry rwTag/rwHours; active loops count as open */
+          const liveDone = [];
+          jobs.forEach(j => j.signoffs.forEach(r => {
+            if (r.rwTag && r.attempt >= 2) liveDone.push({ id: r.rwId || r.rwTag, part: j.part, op: r.op, mode: r.rwMode, name: r.rwTag, qty: (r.qtyA || 0) + (r.qtyR || 0), hrs: r.rwHours || 0, live: true });
+          }));
+          const liveOpen = jobs.filter(j => j.rw).map(j => ({ id: j.rw.id, part: j.part, op: j.rw.op, mode: j.rw.mode, name: j.rw.name, qty: j.rw.qty, open: true }));
+          const all = [...REWORK_HIST, ...liveDone];
+          const byTag = {};
+          all.forEach(r => {
+            const k = `${r.id}·${r.part}·${r.op}`;
+            byTag[k] ||= { ...r, n: 0, qty: 0, hrs: 0, liveN: 0 };
+            byTag[k].n++; byTag[k].qty += r.qty; byTag[k].hrs += r.hrs || 0;
+            if (r.live) byTag[k].liveN++;
+          });
+          liveOpen.forEach(r => {
+            const k = `${r.id}·${r.part}·${r.op}`;
+            byTag[k] ||= { ...r, n: 0, qty: 0, hrs: 0, liveN: 0 };
+            byTag[k].open = true;
+          });
+          const rows = Object.values(byTag).sort((a, b) => b.hrs - a.hrs);
+          const hrsMax = Math.max(1, ...rows.map(r => r.hrs));
+          const totHrs = rows.reduce((a, r) => a + r.hrs, 0);
+          const totN = rows.reduce((a, r) => a + r.n, 0);
+          return (
+            <>
+              <div style={{ display: "flex", gap: 14, fontSize: 11.5, fontWeight: 700, marginBottom: 8, flexWrap: "wrap" }}>
+                <span><b style={{ fontFamily: MONO, fontSize: 15, color: "#8A6A16" }}>{totN}</b> instances · 12 wk</span>
+                <span><b style={{ fontFamily: MONO, fontSize: 15, color: "#8A6A16" }}>{totHrs.toFixed(0)}h</b> excess time spent recovering</span>
+                <span style={{ color: C.dim, fontWeight: 500 }}>this is capacity spent making parts right instead of making parts — the Pareto says where to aim corrective action</span>
+              </div>
+              {rows.map((r, i) => {
+                const recurring = r.n >= 3;
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, flexWrap: "wrap" }}>
+                    <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 800, width: 52, color: "#8A6A16" }}>{r.id}</span>
+                    <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 700, width: 74, color: PARTS[r.part]?.color || C.navy }}>{r.part}</span>
+                    <span style={{ fontSize: 10.5, width: 46, color: C.dim, fontFamily: MONO }}>OP {r.op}</span>
+                    <span style={{ fontSize: 11, flex: 1, minWidth: 150 }}>{r.mode === "loop" ? "↩" : "⟳"} {r.name}</span>
+                    <div style={{ flex: 1, minWidth: 90, height: 12, background: "#F5F1E4", borderRadius: 3, overflow: "hidden" }}>
+                      <div style={{ width: `${r.hrs / hrsMax * 100}%`, height: "100%", background: "#C9A84C" }} />
+                    </div>
+                    <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 800, width: 46, textAlign: "right" }}>{r.hrs.toFixed(1)}h</span>
+                    <span style={{ fontFamily: MONO, fontSize: 10.5, width: 34, textAlign: "right", color: C.dim }}>×{r.n}</span>
+                    {recurring && (
+                      <span style={{ fontSize: 8.5, fontWeight: 800, color: "#fff", background: C.red, borderRadius: 5, padding: "2px 7px" }}>
+                        REPEAT INSTANCE — CORRECTIVE ACTION
+                      </span>
+                    )}
+                    {r.open && (
+                      <span style={{ fontSize: 8.5, fontWeight: 800, color: "#8A6A16", background: "#FBF3E2",
+                                     border: "1px solid #DDD3B8", borderRadius: 5, padding: "2px 7px" }}>
+                        ↻ OPEN NOW · {r.qty || ""} EA
+                      </span>
+                    )}
+                    {r.liveN > 0 && !r.open && (
+                      <span style={{ fontSize: 8.5, fontWeight: 800, color: "#2F6B4A", background: "#E7F2EA",
+                                     border: "1px solid #C9D8C4", borderRadius: 5, padding: "2px 7px" }}>
+                        {r.liveN} LIVE
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+              <div style={{ fontSize: 10.5, color: C.dim, marginTop: 6 }}>
+                Tags come from the routing library, the universal final-cleaning path, and SO-attached tags. A tag
+                repeating ≥3× is flagged — the pattern was found because instances are captured, exactly the point of
+                the exit-path model.
+              </div>
+            </>
+          );
+        })()}
+      </Panel>
+
+      <Panel title="NON-CONFORMANCE REPORTS — WEEKLY" note="NCRs raised per week (seeded) · live open NCRs listed below">
+        <WeekBars labels={last12.map(h => h.wk)} vals={last12.map(h => h.ncrs)} color={C.red} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 10 }}>
+          <div>
+            <div style={{ fontSize: 10, letterSpacing: 1, fontWeight: 800, color: C.dim, marginBottom: 5 }}>PARETO BY DEPARTMENT — 12 WK</div>
+            {pareto.map(([d, n]) => (
+              <div key={d} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 800, width: 54, color: C.navy }}>{d}</span>
+                <div style={{ flex: 1, height: 12, background: "#F1F3F6", borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ width: `${n / paretoMax * 100}%`, height: "100%", background: C.red, opacity: 0.82 }} />
+                </div>
+                <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 800, width: 20, textAlign: "right" }}>{n}</span>
+              </div>
+            ))}
+          </div>
+          <div>
+            <div style={{ fontSize: 10, letterSpacing: 1, fontWeight: 800, color: C.dim, marginBottom: 5 }}>OPEN NCRS — LIVE</div>
+            {live.openNcrs.length === 0 && <div style={{ fontSize: 11.5, color: C.dim }}>No travelers currently held on an NCR.</div>}
+            {live.openNcrs.map(j => (
+              <div key={j.id} style={{ background: "#FBEDEA", border: "1px solid #E3B7AF", borderRadius: 7,
+                                       padding: "6px 9px", marginBottom: 5, fontSize: 10.5 }}>
+                <span style={{ fontFamily: MONO, fontWeight: 800, color: C.navy }}>SO {j.so} · {j.id}</span>
+                <span style={{ fontFamily: MONO, color: PARTS[j.part].color, fontWeight: 700 }}> {j.part}</span>
+                <div style={{ color: "#7A2A20", marginTop: 2 }}>{j.holdReason}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Panel>
+
+      <div style={{ fontSize: 10.5, color: C.dim, lineHeight: 1.55 }}>
+        History is a seeded demo dataset (deterministic — same story every load); the live tiles overlay this session's
+        actual sign-offs, standard-rework routings, and NCR holds. In production these roll up from traveler records
+        continuously — no manual metric collection.
       </div>
     </div>
   );
